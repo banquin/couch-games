@@ -24,12 +24,20 @@ export async function pickTransport() {
   return 'peer';
 }
 
+// STUN finds a direct route; TURN relays through PeerJS's free servers when a network blocks
+// direct links (the TCP variants help on networks that block UDP).
+const ICE = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478',
+           'turn:eu-0.turn.peerjs.com:3478?transport=tcp', 'turn:us-0.turn.peerjs.com:3478?transport=tcp'],
+    username: 'peerjs', credential: 'peerjsp' },
+];
 function peerOptions() {
   // ?peerhost=localhost:9000 lets us test against a local PeerServer.
   const q = new URLSearchParams(location.search).get('peerhost');
-  if (!q) return { debug: 1 };
+  if (!q) return { debug: 1, config: { iceServers: ICE } };
   const [host, port] = q.split(':');
-  return { host, port: Number(port || 9000), path: '/', secure: false, debug: 1 };
+  return { host, port: Number(port || 9000), path: '/', secure: false, debug: 1, config: { iceServers: ICE } };
 }
 
 // ---------- HOST ----------
@@ -148,25 +156,48 @@ function joinLocal(code, pid, h) {
 }
 
 function joinPeer(code, pid, h) {
-  let api = { kind: 'peer', send: () => {} };
-  let peer = null, conn = null, dead = false;
+  // One attempt at a time: a link through a relay can take several seconds to open, so we never
+  // abandon an attempt younger than ATTEMPT_MS, and we only ever send on the link that opened.
+  const ATTEMPT_MS = 15000;
+  let peer = null, pending = null, live = null, startedAt = 0, retrying = false;
   const connect = () => {
-    if (dead) return;
     if (!peer || peer.destroyed || peer.disconnected) {
       try { peer && peer.destroy(); } catch (e) {}
-      peer = new window.Peer(undefined, peerOptions());
-      peer.on('error', err => { console.warn('peer error', err); h.onClose && h.onClose(String(err.type || err)); setTimeout(retry, 2000); });
-      peer.on('open', openConn);
-    } else openConn();
+      const p = peer = new window.Peer(undefined, peerOptions());
+      p.on('open', () => { if (p === peer) openConn(); });
+      p.on('error', err => {
+        console.warn('peer error', err);
+        if (err && err.type === 'peer-unavailable') { pending = null; h.onNoHost && h.onNoHost(); }
+        h.onClose && h.onClose(String((err && err.type) || err));
+        setTimeout(retry, 2000);
+      });
+    } else if (peer.open) openConn();
   };
   const openConn = () => {
-    conn = peer.connect(PEER_PREFIX + code, { metadata: { pid }, reliable: true });
-    conn.on('open', () => { api.send = msg => conn.open && conn.send(msg); h.onOpen && h.onOpen(); });
-    conn.on('data', msg => h.onMessage(msg));
-    conn.on('close', () => { h.onClose && h.onClose('closed'); setTimeout(retry, 1500); });
+    if (pending && !pending.open) { try { pending.close(); } catch (e) {} }
+    const c = pending = peer.connect(PEER_PREFIX + code, { metadata: { pid }, reliable: true });
+    startedAt = Date.now();
+    c.on('open', () => {
+      if (live && live !== c) { try { live.close(); } catch (e) {} }
+      live = c; if (pending === c) pending = null;
+      h.onOpen && h.onOpen();
+    });
+    c.on('data', msg => { if (c === live) h.onMessage(msg); });
+    c.on('error', err => console.warn('conn error', err));
+    c.on('close', () => {
+      if (c === live) { live = null; h.onClose && h.onClose('closed'); setTimeout(retry, 1500); }
+      if (c === pending) pending = null;
+    });
   };
-  let retrying = false;
-  const retry = () => { if (retrying || dead) return; retrying = true; setTimeout(() => { retrying = false; connect(); }, 500); };
+  const retry = () => { if (retrying) return; retrying = true; setTimeout(() => { retrying = false; connect(); }, 500); };
   connect();
-  return { kind: 'peer', send: msg => api.send(msg), reconnect: () => { if (!conn || !conn.open) retry(); } };
+  return {
+    kind: 'peer',
+    send: msg => { if (live && live.open) live.send(msg); },
+    reconnect: () => {
+      if (live && live.open) return;
+      if (pending && Date.now() - startedAt < ATTEMPT_MS) return;   // still opening: give it time
+      retry();
+    },
+  };
 }

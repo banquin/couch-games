@@ -46,6 +46,10 @@ async function doJoin() {
     if (!gotReply || Date.now() - lastMsg > 15000) { conn.reconnect && conn.reconnect(); hello(); }
   }, 2500);
   hello();
+  // If nothing answers for a while, say so instead of spinning forever.
+  setTimeout(() => {
+    if (!gotReply) $('#joinMsg').textContent = 'Still connecting… This can take up to a minute. If it never connects, the TV\'s network or computer is probably blocking it: try hosting from another device (a personal laptop or tablet works).';
+  }, 20000);
 }
 function hello() { if (conn) conn.send({ type: 'hello', name: store.get('wc-name'), reclaim: true }); }
 let lock = null;
