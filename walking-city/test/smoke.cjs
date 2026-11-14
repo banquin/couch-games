@@ -16,6 +16,12 @@ const BOTS = Number(process.env.BOTS || 3), ROUNDS = Number(process.env.ROUNDS |
   const code = await tv.textContent('#roomCode');
   console.log('code', code, 'join', await tv.textContent('#joinUrl'));
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  // BLOCK_RTC=1 simulates a network that blocks the direct phone-to-TV link, to exercise the relay fallback.
+  if (process.env.BLOCK_RTC) await ctx.addInitScript(() => {
+    const Real = window.RTCPeerConnection;
+    window.RTCPeerConnection = function (cfg) { return new Real({ ...(cfg || {}), iceServers: [], iceTransportPolicy: 'relay' }); };
+    window.RTCPeerConnection.prototype = Real.prototype;
+  });
   const ph = await ctx.newPage();
   ph.on('console', m => { if (m.type() === 'error') errors.push('PH: ' + m.text()); });
   ph.on('pageerror', e => errors.push('PH pageerror: ' + e.message));

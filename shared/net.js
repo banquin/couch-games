@@ -45,7 +45,8 @@ export async function hostRoom(code, h, kind) {
   kind = kind || await pickTransport();
   if (kind === 'relay') return hostRelay(code, h);
   if (kind === 'local') return hostLocal(code, h);
-  return hostPeer(code, h);
+  if (kind === 'mqtt') return hostMqtt(code, h);
+  return hostHybrid(code, h);
 }
 
 function hostRelay(code, h) {
@@ -118,7 +119,8 @@ export async function joinRoom(code, pid, h, kind) {
   kind = kind || await pickTransport();
   if (kind === 'relay') return joinRelay(code, pid, h);
   if (kind === 'local') return joinLocal(code, pid, h);
-  return joinPeer(code, pid, h);
+  if (kind === 'mqtt') return joinMqtt(code, pid, h);
+  return joinHybrid(code, pid, h);
 }
 
 function joinRelay(code, pid, h) {
@@ -194,11 +196,121 @@ function joinPeer(code, pid, h) {
   connect();
   return {
     kind: 'peer',
+    isOpen: () => !!(live && live.open),
     send: msg => { if (live && live.open) live.send(msg); },
     reconnect: () => {
       if (live && live.open) return;
       if (pending && Date.now() - startedAt < ATTEMPT_MS) return;   // still opening: give it time
       retry();
     },
+  };
+}
+
+// ---------- RELAY FALLBACK (public MQTT broker over secure WebSocket, port 443) ----------
+// Some networks and managed computers block the direct phone-to-TV link that PeerJS opens.
+// Then messages go through a free public message relay over the normal web port instead.
+// The host always listens on both; a phone switches to the relay if the direct link hasn't
+// opened after FALLBACK_MS. Game messages are visible to anyone watching the relay (nothing personal).
+const MQTT_URL = 'wss://public.cloud.shiftr.io';
+const MQTT_AUTH = { username: 'public', password: 'public' };
+const FALLBACK_MS = 7000;
+const topicBase = code => 'couchgames-v1/' + code + '/';
+let mqttLib = null;
+function loadMqtt() {
+  return mqttLib || (mqttLib = new Promise((res, rej) => {
+    if (window.mqtt) return res(window.mqtt);
+    const s = document.createElement('script');
+    s.src = new URL('vendor/mqtt.min.js', import.meta.url).toString();
+    s.onload = () => res(window.mqtt); s.onerror = () => { mqttLib = null; rej(new Error('relay script failed to load')); };
+    document.head.appendChild(s);
+  }));
+}
+async function mqttClient(extra) {
+  const lib = await loadMqtt();
+  const connect = lib.connect || (lib.default && lib.default.connect);
+  return connect(MQTT_URL, { ...MQTT_AUTH, clientId: 'cg-' + Math.random().toString(36).slice(2, 12),
+    keepalive: 30, reconnectPeriod: 2000, connectTimeout: 10000, clean: true, ...extra });
+}
+
+function hostMqtt(code, h) {
+  return new Promise(async (resolve, reject) => {
+    const t = topicBase(code), seen = new Set();
+    let c;
+    try { c = await mqttClient(); } catch (e) { return reject(e); }
+    const pub = (to, msg) => { if (c.connected) c.publish(t + 'down/' + to, JSON.stringify({ t: 'msg', msg })); };
+    const api = { kind: 'mqtt', send: (pid, msg) => pub(encodeURIComponent(pid), msg), broadcast: msg => pub('all', msg) };
+    const timer = setTimeout(() => reject(Object.assign(new Error('relay timeout'), { type: 'network' })), 12000);
+    c.on('connect', () => { c.subscribe(t + 'up/+'); clearTimeout(timer); resolve(api); });
+    c.on('error', e => console.warn('relay error', e && e.message));
+    c.on('message', (topic, buf) => {
+      let pid, m;
+      try { pid = decodeURIComponent(topic.slice((t + 'up/').length)); m = JSON.parse(buf.toString()); } catch (e) { return; }
+      if (!pid || !m) return;
+      if (m.t === 'leave') { seen.delete(pid); h.onLeave && h.onLeave(pid); return; }
+      if (!seen.has(pid)) { seen.add(pid); h.onJoin && h.onJoin(pid); }
+      if (m.t === 'msg') h.onMessage(pid, m.msg);
+    });
+  });
+}
+
+async function joinMqtt(code, pid, h) {
+  const t = topicBase(code), me = encodeURIComponent(pid);
+  const c = await mqttClient({ will: { topic: t + 'up/' + me, payload: JSON.stringify({ t: 'leave' }), qos: 0 } });
+  c.on('connect', () => {
+    c.subscribe([t + 'down/' + me, t + 'down/all']);
+    c.publish(t + 'up/' + me, JSON.stringify({ t: 'join' }));
+    h.onOpen && h.onOpen();
+  });
+  c.on('error', e => console.warn('relay error', e && e.message));
+  c.on('offline', () => h.onClose && h.onClose('offline'));
+  c.on('message', (topic, buf) => { try { const m = JSON.parse(buf.toString()); if (m.t === 'msg') h.onMessage(m.msg); } catch (e) {} });
+  return {
+    kind: 'mqtt',
+    isOpen: () => c.connected,
+    send: msg => { if (c.connected) c.publish(t + 'up/' + me, JSON.stringify({ t: 'msg', msg })); },
+    reconnect: () => { if (!c.connected && !c.reconnecting) c.reconnect(); },
+  };
+}
+
+// Host on both at once; answer each phone on the route it last spoke through.
+async function hostHybrid(code, h) {
+  const via = new Map(); // pid -> 'peer' | 'mqtt'
+  const wrap = tag => ({ ...h,
+    onJoin: pid => { via.set(pid, tag); h.onJoin && h.onJoin(pid); },
+    onMessage: (pid, msg) => { via.set(pid, tag); h.onMessage(pid, msg); },
+    onLeave: pid => { if (via.get(pid) === tag) { via.delete(pid); h.onLeave && h.onLeave(pid); } },
+  });
+  let p = null, m = null;
+  const pp = hostPeer(code, wrap('peer')).then(x => (p = x));
+  const mp = hostMqtt(code, wrap('mqtt')).then(x => (m = x));
+  // Ready once the direct route is up (it also reserves the room code); if that fails, the relay alone will do.
+  try { await pp; } catch (err) {
+    if (err && err.type === 'unavailable-id') throw err;   // code taken: let the caller pick another
+    try { await mp; } catch (e) { throw err; }
+  }
+  mp.catch(e => console.warn('relay fallback unavailable:', e && e.message));
+  return {
+    kind: 'peer',
+    send: (pid, msg) => { if (via.get(pid) === 'mqtt') { m && m.send(pid, msg); } else if (p) p.send(pid, msg); },
+    broadcast: msg => { if (p) p.broadcast(msg); if (m && [...via.values()].includes('mqtt')) m.broadcast(msg); },
+  };
+}
+
+// Phone: try the direct link first; if it hasn't opened after FALLBACK_MS, add the relay.
+function joinHybrid(code, pid, h) {
+  const direct = joinPeer(code, pid, h);
+  let relay = null, starting = false;
+  const startRelay = () => {
+    if (relay || starting || direct.isOpen()) return;
+    starting = true;
+    console.warn('direct link not open after ' + FALLBACK_MS + 'ms: using the relay');
+    joinMqtt(code, pid, h).then(r => (relay = r)).catch(e => { starting = false; console.warn('relay failed', e && e.message); });
+  };
+  if (new URLSearchParams(location.search).get('relay') === 'now') startRelay();
+  setTimeout(startRelay, FALLBACK_MS);
+  return {
+    kind: 'peer',
+    send: msg => { if (direct.isOpen()) direct.send(msg); else if (relay) relay.send(msg); },
+    reconnect: () => { direct.reconnect(); if (relay) relay.reconnect(); else startRelay(); },
   };
 }
