@@ -15,6 +15,8 @@ const RELAY = path => new URL('../relay/' + path, import.meta.url).toString();
 export async function pickTransport() {
   const forced = new URLSearchParams(location.search).get('net');
   if (forced) return forced;
+  // Our relay server only speaks plain http, so an https page is a static host: go straight to PeerJS.
+  if (location.protocol === 'https:') return 'peer';
   try {
     const r = await fetch(RELAY('ping'), { cache: 'no-store' });
     if (r.ok && (await r.json()).ok) return 'relay';
