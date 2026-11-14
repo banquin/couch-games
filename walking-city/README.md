@@ -1,51 +1,43 @@
-# The Walking City
+# Last Train Out (folder: walking-city)
 
-Co-op factory game for 3–5 players, about 45 minutes. The TV shows the city: one 3×3 factory district per player, bolted around a shared Main Drive, with a storm chasing it up the track on the left. Each player's phone is their private hand. Everyone plans at the same time, then the TV runs the factory and the city walks.
+A co-op game for exactly five cars, played by 1–5 people with bots running any car nobody picks. It takes about 30–40 minutes. The TV shows the train: five cars, each with a 4×4 grid of machines, and a race track on the left where the wildfire chases the train to the Last Station. Each phone runs one car.
 
-Rules and design: `walking-city-design-doc.md` in the project files (v0.2 matches this build).
+Rules and design: `walking-city-design-doc.md` in the project files (v0.3 matches this build; the doc still uses the older Walking City names).
+
+## The five cars
+
+| Car | Engine id | What you do |
+|---|---|---|
+| Boiler | `power` | Set Fireboxes and Turbines, pledge steam to every other car, and avoid surplus. |
+| Workshop | `fab` | Run ore, plates, gears and cores, and send plates to whoever is building. |
+| Engine | `loco` | Set piston throttles against heat, pick the line at each fork, and ask for gears. |
+| Armour | `shield` | Only you see where embers land, so you choose what gets doused. |
+| Map Room | `research` | Make charts, send blueprints that unlock upgrade levels, boost cars, and install upgrades. You also see the next fork. |
 
 ## Play it
 
-It runs from the same `couch-games` folder and server as Orbital Couriers.
-
-1. Start the server: double-click `start-mac.command` (Mac) or `start-windows.bat` (Windows). The game picker opens in your browser.
-2. Click **Host this game** on **The Walking City**. Put that browser on the TV, full screen.
-3. Everyone scans the QR code with their phone (same Wi-Fi), types a name, and taps **Join**.
-4. Pick a storm (Lightning or Sandstorm) and a difficulty. **First Voyage** is the easier one; start there.
-5. With 3–5 players, press **Start**.
-
-Want to try it alone? Press **+ Practice bot** twice, then join with your phone.
+1. Open the live site (or run `node server.js` from the `couch-games` folder) and click **Host** on this game. Put that browser on the TV.
+2. Everyone scans the QR code, types a name, and picks a car. Bots take the rest.
+3. Pick a difficulty. **First Run** is the easiest.
+4. Press **Start**.
 
 ### A round, from your phone
-1. Tap a card, then choose what to do with it: **Build** (then tap a tile), **Scrap** for a crate, **Pass left**, **Pass right**, or **Keep**.
-2. You must play one card and pass one each way. From round 2, you can only build cards that were passed to you (coloured border) or the one you kept.
-3. Optionally send a crate to the Main Drive.
-4. Tap **Ready**. Changed your mind? Tap **Change my plan** until everyone is ready.
+- Tap an empty cell to **build** (one build or upgrade a round). Tap a machine to set its dial, **upgrade** it, **repair** it, or **move** it. The first move is free; machines moved after that sit idle for the round.
+- The strip at the top shows what you're asking for and what's been pledged to you. Asks are computed from your plan, so you never have to type them.
+- Use your car's panel for your role: pledges, the recipe, the line, the ember map, or blueprints.
+- Tap **Ready**. **Autopilot** fills in a sensible plan for you to check.
 
-The TV then plays the round: belts light up, starved machines flash red, Parts dock into the core, and the city and storm move. A short recap on the right explains what happened, and the next round starts on its own.
+The TV then plays the round in beats (embers, Boiler, Workshop, Armour and Map Room, Engine, wildfire) and shows one line explaining what cost the most miles.
 
-### During the game
-- **Autopilot** on a player's row lets a bot plan for them; opening their phone again gives control back.
-- **Pause** freezes the animation. **New game** (click twice) returns to the lobby.
-- Refreshing the TV or a phone is safe.
+## Code layout
 
-## Change the numbers
+- `js/config.js`: every rule number. `js/theme.js`: every name and word players read. Re-theme the game by editing only theme.js.
+- `js/engine/engine.js`: pure rules (no DOM). `bots.js`: the bot planner for any car. `views.js`: what the TV and each phone may see.
+- `js/ui/icons.js` + `js/ui/board.js`: all drawing. A new art style (e.g. 3D) replaces these two files.
+- `js/ui/host.js` (TV) and `js/ui/phone.js` (phone): screens and networking.
 
-Every rule number is in `js/config.js`: hand size, deck, card recipes, storm speed table, Haven distance, Drive stages, difficulty modes. Save and refresh the TV.
+## Tests
 
-Check balance before a playtest (needs Node, run from the `couch-games` folder):
-
-```
-node walking-city/sim/simulate.js 200                 # bot games at 3/4/5 players, First Voyage, both storms
-MODE=standard node walking-city/sim/simulate.js 200   # same, Standard difficulty
-node --test walking-city/test/engine.test.js          # rules tests
-```
-
-`test/smoke.cjs` is a headless-browser end-to-end test (TV + phone + bots, needs Playwright): start the server, then `BOTS=2 ROUNDS=10 node walking-city/test/smoke.cjs shots/`.
-
-## How it's built
-
-- `js/engine/` is pure game logic: rules, flow, bots, and the views each screen gets. The TV, phones, simulator and tests all use it.
-- `js/ui/host.js` (TV) runs the game; `js/ui/phone.js` is the controller. Phones only ever see their own hand.
-- `js/ui/art.js` and `js/ui/ring.js` draw all art in code (SVG): machines, belts, the core.
-- Networking is the shared `../shared/net.js`.
+- `node walking-city/test/engine.test.js`: rules tests.
+- `node walking-city/sim/simulate.js 150 standard roles`: bot games, win rates, and what happens when a seat is played badly.
+- `node server.js` then `node walking-city/test/smoke.cjs <outDir>`: a headless TV and two phones for three rounds, with screenshots.

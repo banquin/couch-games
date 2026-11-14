@@ -1,51 +1,34 @@
-// Words for the TV recap and phone hints.
-import { CARDS } from '../config.js';
-import { RES_NAME, resIcon } from './art.js';
-
+// Words for recaps and labels. Names come from theme.js via config.
+import { DEPT_INFO, MACHINES, TECHS, TERRAIN, OVERCLOCK } from '../config.js';
+import { THEME } from '../theme.js';
+export const W = THEME.words;
 export const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-export const cardName = c => (CARDS[c] || { name: c }).name;
-export function who(v, seat) { const p = v.players[seat]; return `<b style="color:${p.color}">${esc(p.name)}</b>`; }
-const list = (obj) => Object.keys(obj).map(r => RES_NAME[r]).join(' + ');
+export const COLS = 'ABCD';
+export const cellName = i => COLS[i % 4] + (Math.floor(i / 4) + 1);
+export const dn = d => DEPT_INFO[d].name;
+export const dc = d => DEPT_INFO[d].color;
+export const mn = t => MACHINES[t].name;
+export const tag = d => `<b style="color:${dc(d)}">${esc(dn(d))}</b>`;
+export const lvlName = l => ['', 'I', 'II', 'III'][l] || '';
 
-// One line per notable event, most important first. Returns HTML strings.
-export function recapLines(v) {
-  const L = v.last;
-  if (!L) return [];
+// Recap lines for the TV after a round: blame first, then the save, then notable events. At most `max`.
+export function recapLines(ev, max = 6) {
   const out = [];
-  const ev = L.events;
-  out.push(`The city walked <b class="c-stride">${L.walked}</b> strides${L.bonusUsed ? ` (engines ${L.engineStrides} + Main Drive ${L.bonusUsed})` : ''}.`);
-  for (const e of ev.filter(e => e.t === 'stage')) out.push(`<b class="c-gold">Main Drive stage ${e.stage} complete!</b> +${e.add} strides every round from now on.`);
-  const starvedEng = ev.filter(e => e.t === 'starved' && CARDS[e.card].kind === 'engine');
-  const starvedOther = ev.filter(e => e.t === 'starved' && CARDS[e.card].kind !== 'engine');
-  for (const e of starvedEng.slice(0, 3)) out.push(`${who(v, e.seat)}'s ${cardName(e.card)} starved: no ${list(e.missing)}.`);
-  if (starvedEng.length > 3) out.push(`${starvedEng.length - 3} more engines starved.`);
-  if (starvedOther.length && out.length < 5) out.push(`${starvedOther.length} other building${starvedOther.length > 1 ? 's' : ''} went dark for lack of inputs.`);
-  for (const e of ev.filter(e => e.t === 'fed')) out.push(`${who(v, e.seat)}'s crates kept an engine running.`);
-  const gifts = ev.filter(e => e.t === 'generous');
-  if (gifts.length) out.push(`Gifts built: ${gifts.map(e => `${who(v, e.seat)}→${who(v, e.to)} ${cardName(e.card)}`).join(', ')}. Each giver gets a ${v.generosityKind === 'part' ? 'Part' : 'Supply'} crate.`);
-  for (const e of ev.filter(e => e.t === 'commit')) out.push(`${who(v, e.seat)} sent a ${e.crate === 'part' ? 'Part' : 'Supply'} crate to the Main Drive${e.to !== e.seat ? ` for ${who(v, e.to)}'s district` : ''}.`);
-  if (L.prod.off.length) out.push(`${v.stormType === 'lightning' ? 'Lightning' : 'Sand'} shut down ${L.prod.off.length} building${L.prod.off.length > 1 ? 's' : ''}.`);
-  const gap = L.city - L.storm;
-  if (L.outcome === 'won') out.push(`<b class="c-good">The city reached the Haven!</b>`);
-  else if (L.outcome === 'caught') out.push(`<b class="c-bad">The storm moved ${L.speed} and swallowed the city.</b>`);
-  else out.push(`The storm moved ${L.speed}. It is <b class="${gap <= 5 ? 'c-bad' : ''}">${gap}</b> behind.`);
-  // keep the first line and the storm line; trim the middle so the rail never overflows
-  if (out.length > 6) out.splice(5, out.length - 6);
-  return out;
+  if (ev.blame) out.push(`<span class="c-bad">Lost ${ev.blame.lost} ${W.strides}:</span> ${esc(ev.blame.steps.join(' ← '))}${ev.blame.more ? ` <span class="muted">(+${ev.blame.more} more)</span>` : ''}`);
+  if (ev.saves && ev.saves.length) {
+    const best = ev.saves.slice().sort((a, b) => b.saved.length - a.saved.length)[0];
+    out.push(`<span class="c-good">Save of the round:</span> ${tag('shield')}'s ${W.cover} kept ${tag(best.dept)} column ${COLS[best.col]} running (${best.saved.map(mn).join(', ')})${ev.saves.length > 1 ? ` and ${ev.saves.length - 1} more` : ''}.`);
+  }
+  const hits = ev.strikes.filter(s => s.hit.length);
+  if (hits.length) out.push(`${W.Lightning} jammed ${hits.map(s => `${tag(s.dept)} ${COLS[s.at]} (${s.hit.map(h => mn(h.type)).join(', ')})`).join('; ')}.`);
+  for (const b of ev.broken.slice(0, 2)) out.push(`${tag(b.from)} delivered ${b.got} of ${b.want} ${W[b.res] || b.res} to ${tag(b.to)}.`);
+  if (ev.trip) out.push(`${tag('power')} had ${ev.trip.surplus} ${W.power} left over: ${mn(ev.trip.type)} ${cellName(ev.trip.cell)} trips next round.`);
+  if (ev.unlock) out.push(`${tag('research')} sent a ${W.blueprint}: ${tag(ev.unlock)} can upgrade a level higher from next round.`);
+  for (const t of ev.techs) out.push(`${tag('research')} brought ${esc(TECHS[t.tech].name)} online: ${esc(TECHS[t.tech].text)}`);
+  const lost = ev.waste.filter(w => w.res === 'ore' && w.n >= 3);
+  if (lost.length) out.push(`${tag('fab')} lost ${lost[0].n} ${W.ore} (not enough smelting).`);
+  return out.slice(0, max);
 }
 
-// A gentle "specialty" hint for first games, based on what the player has built.
-export function leanHint(v, seat) {
-  const D = v.districts[seat];
-  const count = k => D.filter(b => b && CARDS[b.card].kind === k).length;
-  const makes = r => D.filter(b => b && CARDS[b.card].makes[r]).length;
-  const st = v.core.current;
-  if (st && v.core.progress[seat] < st.need) {
-    if (st.res === 'part') return v.me && v.me.crates.part ? `You have a ${resIcon('part', 16)} Part crate: send it to the Main Drive below.` : `The Main Drive needs a ${resIcon('part', 16)} Part from you. Every card you pass that gets built earns a Part crate. A Workshop in your top row also delivers one each round.`;
-    return `The Main Drive needs ${st.need} basic resource from you. Any producer in your top row (next to the core) delivers it.`;
-  }
-  if (makes('part') >= 2) return "You're the Parts supplier. Turbines next to your Workshops will love you.";
-  if (count('engine') >= 3) return "You're an engine district. Ask your neighbours to put Fuel and Power on your border.";
-  if (count('extractor') >= 4) return "You're a supply district. Producers on your left and right edges feed your neighbours too.";
-  return 'Buildings feed every touching tile, even across the border into your neighbours.';
-}
+export function terrainLine(id) { const t = TERRAIN[id]; return `${esc(t.name)}${t.grade !== 1 ? ` ×${t.grade}` : ''}`; }
+export { OVERCLOCK, TECHS, TERRAIN, MACHINES, DEPT_INFO };
