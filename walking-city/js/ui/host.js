@@ -39,13 +39,28 @@ function setBest(N, v) { try { const b = JSON.parse(localStorage.getItem(BEST_KE
 // ---------------- networking ----------------
 async function startNet() {
   const kind = await pickTransport();
-  try {
-    net = await hostRoom(S.code, { onJoin: () => {}, onLeave: () => {}, onMessage: safeOnMessage, onReplaced }, kind);
-  } catch (e) {
-    $('#netNote').innerHTML = `<b style="color:var(--bad)">Couldn't open the room (${esc(e.type || e.message || e)}).</b> Refresh to try again, or run <code>node server.js</code> on this computer.`;
-    return;
+  let codeChanged = false;
+  for (let tries = 0; ; tries++) {
+    try {
+      // After a refresh mid-game, wait a little for the old link to clear so phones keep the same code.
+      net = await hostRoom(S.code, { onJoin: () => {}, onLeave: () => {}, onMessage: safeOnMessage, onReplaced,
+        idRetries: S.game ? 6 : 0 }, kind);
+      break;
+    } catch (e) {
+      if (e && e.type === 'unavailable-id' && tries < 3) {
+        // Another TV tab (or a link that hasn't cleared) still holds this code: take a fresh one.
+        S.code = newCode(); save(); codeChanged = true;
+        continue;
+      }
+      $('#netNote').innerHTML = `<b style="color:var(--bad)">Couldn't open the room (${esc(e.type || e.message || e)}).</b> Refresh to try again, or run <code>node server.js</code> on this computer.`;
+      return;
+    }
   }
   await showJoinInfo(kind);
+  if (codeChanged) {
+    $('#netNote').innerHTML = '<b>New room code ' + S.code + '.</b> The old one was still in use (is another TV tab open?). Everyone scan the new QR code. ' + $('#netNote').innerHTML;
+    if (S.game && typeof toast === 'function') try { toast('New room code ' + S.code + ': players, rescan the QR code'); } catch (e) {}
+  }
   pushAll();
 }
 

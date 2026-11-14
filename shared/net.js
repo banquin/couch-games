@@ -80,7 +80,8 @@ async function hostPeer(code, h) {
   for (let attempt = 0; ; attempt++) {
     try { return await hostPeerOnce(code, h); }
     catch (err) {
-      if (attempt >= 5 || (err && err.type !== 'unavailable-id' && err.type !== 'network' && err.type !== 'server-error')) throw err;
+      const limit = err && err.type === 'unavailable-id' ? (h.idRetries ?? 5) : 5;
+      if (attempt >= limit || (err && err.type !== 'unavailable-id' && err.type !== 'network' && err.type !== 'server-error')) throw err;
       await new Promise(r => setTimeout(r, 1500));
     }
   }
