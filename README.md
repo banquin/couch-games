@@ -4,7 +4,13 @@ One folder, one server, a game picker for the TV. Phones are the controllers.
 
 **Orbital Couriers** is a 3–5 player couch game. The TV (or a laptop plugged into the TV) shows the star map. Each player joins on their phone by scanning a QR code and secretly programs 3 moves per round. The TV then flies every ship at once, step by step. About 20–30 minutes for 8 rounds.
 
-## Play it tonight (recommended way: laptop + TV, same Wi-Fi)
+## Easiest way: play online (nothing to install)
+
+Open **https://banquin.github.io/couch-games/** in a browser on the TV (or a laptop plugged into it), pick a game, and have everyone scan the QR code. Phones can be on any network, even cellular. It connects through the free PeerJS service over the internet, so you need an internet connection. If it ever fails to connect, use the local server below.
+
+To update the online copy, push the folder's contents to the `gh-pages` branch of github.com/banquin/couch-games.
+
+## Local server (no internet needed; laptop + TV, same Wi-Fi)
 
 1. **Install Node.js once.** Go to https://nodejs.org, download the "LTS" installer, and click through it.
 2. **Get this folder** onto the laptop (download `couch-games.zip` from the project files and unzip it).
