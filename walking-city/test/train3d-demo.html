@@ -3,7 +3,7 @@
      Serve the repo (node server.js) and open /walking-city/test/train3d-demo.html
      ?focus=fab  glide to a car   ?fx=1  play a frost strike, pops and a transfer   ?hud=0  hide the HUD blocks -->
 <html><head><meta charset="utf-8">
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js","three/addons/":"../vendor/three/addons/"}}</script>
 <style>html,body{margin:0;height:100%;overflow:hidden;background:#0b1424}#stage{position:absolute;inset:0}
 .hud{position:absolute;background:#0a1220d8;border:1px solid #fff2;z-index:2}
 .lbl{position:absolute;left:0;top:0;margin-top:-34px;translate:-50% 0;z-index:1;font:700 18px Inter,sans-serif;color:#fff;background:#0a1220d0;padding:2px 10px;white-space:nowrap}</style>
@@ -32,7 +32,7 @@ window.train = train;
 train.update(v); train.setRace({ city: 40, storm: 22 });
 await train.ready;
 const lab = document.getElementById('labels');
-lab.innerHTML = ORDER.map(d => `<div class="lbl" data-car="${d}">${d}</div>`).join('');
+lab.innerHTML = ORDER.map(d => `<div class="lbl" data-car="${d}"><b style="display:inline-block;width:230px">${d}</b></div>`).join('');
 const pin = () => { for (const d of ORDER) { const r = train.carScreenRect(d), el = lab.querySelector(`[data-car="${d}"]`); if (r) el.style.transform = `translate(${r.x + r.w / 2}px,${r.y}px)`; } requestAnimationFrame(pin); };
 pin();
 if (q.get('focus')) setTimeout(() => train.focus(q.get('focus')), 200);
