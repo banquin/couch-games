@@ -257,7 +257,7 @@ export function createTrain(container, opts = {}) {
   const carBox = d => new THREE.Box3(new THREE.Vector3(CAR_X[d] - L / 2, FL, -WD / 2), new THREE.Vector3(CAR_X[d] + L / 2, FL + HT, WD / 2));
   let overview, poses = {};
   function refit() {
-    overview = fitPose(trainBox(), new THREE.Vector3(...(opts.overviewDir || [0.62, 0.8, 1])), 34, 0.97, 0.8, 0.94);
+    overview = fitPose(trainBox(), new THREE.Vector3(...(opts.overviewDir || [0.85, 0.95, 1])), 34, 0.97, 0.8, 0.94);
     for (const d of order) poses[d] = fitPose(carBox(d), new THREE.Vector3(0.3, 0.95, 1), 40, 0.86, 0.72, 0.86);
     camTo = focusDept ? poses[focusDept] : overview;
     if (camT >= 1) { camPos.copy(camTo.pos); camTgt.copy(camTo.tgt); camH = camTo.hfov; }
@@ -328,7 +328,7 @@ export function createTrain(container, opts = {}) {
     // stack pops that land on the same spot at the same time
     const key = d + ':' + cell, slot = (popSlots[key] = (popSlots[key] || 0) + 1) - 1;
     el.style.background = '#0a1220b0'; el.style.padding = '3px 8px';
-    runFx(1.9, k => { const wp = car.group.localToWorld(local.clone()); wp.y += k * 1.4; const [x, y] = worldToCss(wp); el.style.left = x + 'px'; el.style.top = (y - slot * 34) + 'px'; el.style.opacity = k < 0.15 ? k / 0.15 : k > 0.7 ? (1 - k) / 0.3 : 1; },
+    runFx(1.6, k => { const wp = car.group.localToWorld(local.clone()); wp.y += k * 1.4; const [x, y] = worldToCss(wp); el.style.left = x + 'px'; el.style.top = (y - slot * 34) + 'px'; el.style.opacity = k < 0.15 ? k / 0.15 : k > 0.7 ? (1 - k) / 0.3 : 1; },
       () => { el.remove(); popSlots[key]--; });
   }
   function transfer(from, to, res, n = 1) {
@@ -388,7 +388,7 @@ export function createTrain(container, opts = {}) {
     camera.lookAt(camTgt);
     const vf = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camH) / 2) / Math.max(1, camera.aspect)) * 180 / Math.PI;
     if (Math.abs(camera.fov - vf) > 0.01) { camera.fov = vf; camera.updateProjectionMatrix(); }
-    for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i]; f.t += dt; const k = Math.min(1, f.t / f.dur); f.step(k); if (k >= 1) { f.end && f.end(); fx.splice(i, 1); } }
+    for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i]; f.t += rawDt; const k = Math.min(1, f.t / f.dur); f.step(k); if (k >= 1) { f.end && f.end(); fx.splice(i, 1); } }
   }
 
   // ---------- load assets
