@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Walking City · TV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="../shared/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../shared/style.css">
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/host.css">
+<script src="../shared/vendor/peerjs.min.js"></script>
+<script src="../shared/vendor/qrcode.js"></script>
+</head>
+<body class="host wc">
+  <!-- LOBBY -->
+  <section id="lobby" class="screen">
+    <div class="lobby-left">
+      <a class="back" href="../index.html">‹ All games</a>
+      <h1 class="logo big">The Walking<br><b>City</b></h1>
+      <p class="tagline">Build a factory on legs. Feed the Main Drive. Outrun the storm together.</p>
+      <div class="join-box hud">
+        <div id="qr" class="qr"></div>
+        <div>
+          <div class="muted">Join on your phone</div>
+          <div id="joinUrl" class="join-url"></div>
+          <div class="muted" style="margin-top:14px">Room code</div>
+          <div id="roomCode" class="room-code">····</div>
+        </div>
+      </div>
+      <div id="netNote" class="net-note muted"></div>
+    </div>
+    <div class="lobby-right">
+      <h2 class="title">District chiefs <span id="countLabel" class="muted">0 / 5</span></h2>
+      <div id="slots" class="slots"></div>
+      <div class="pickers">
+        <div class="picker"><span>Storm</span>
+          <button class="chip" data-storm="lightning">⚡ Lightning</button>
+          <button class="chip" data-storm="sandstorm">≋ Sandstorm</button></div>
+        <div class="picker"><span>Difficulty</span>
+          <button class="chip" data-mode="first">First Voyage</button>
+          <button class="chip" data-mode="standard">Standard</button></div>
+      </div>
+      <div class="lobby-actions">
+        <button id="addBot" class="btn secondary">+ Practice bot</button>
+        <button id="startBtn" class="btn gold" disabled>Start (needs 3)</button>
+      </div>
+      <details class="howto hud">
+        <summary>How to play (30 seconds)</summary>
+        <ol>
+          <li>Each of you runs one <b>district</b> of a city on legs. Each round you get 5 cards on your phone.</li>
+          <li><b>Build 1</b>, <b>pass 1 left and 1 right</b>, and you may <b>keep 1</b> for next round. After round 1 you can only build cards your neighbours passed you (or the one you kept), so pass what they need!</li>
+          <li>Buildings feed <b>every touching tile</b>, even across the border into a neighbour's district. A building missing an input goes dark.</li>
+          <li><b>Engines</b> turn Fuel + Power into strides. Workshops in the row touching the core deliver <b>Parts</b> to the <b>Main Drive</b>: when every district has delivered, the city gets permanent extra strides.</li>
+          <li>When someone builds a card you passed, you get a <b>Part crate</b>. Crates can go to the Main Drive or keep a starving engine running.</li>
+          <li>Reach the <b>Haven</b> before the storm catches you.</li>
+        </ol>
+      </details>
+    </div>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" class="screen hidden">
+    <div class="track-wrap"><svg id="track"></svg></div>
+    <div class="ring-wrap"><svg id="ring"></svg>
+      <div id="banner" class="banner hidden"></div>
+    </div>
+    <aside class="rail">
+      <div class="rail-head">
+        <div class="round"><span class="title">Round <span id="roundNum">1</span></span><span class="muted"> / <span id="roundMax">10</span></span></div>
+        <div id="phaseText" class="phase-text"></div>
+      </div>
+      <div id="stats" class="stats"></div>
+      <div id="twist" class="twist"></div>
+      <h3 class="title small">Districts</h3>
+      <div id="players" class="players"></div>
+      <h3 class="title small" id="logTitle">Last round</h3>
+      <div id="log" class="log"></div>
+      <div class="rail-foot">
+        <span id="footCode" class="muted"></span>
+        <button id="pauseBtn" class="btn secondary tiny">Pause</button>
+        <button id="newBtn" class="btn secondary tiny">New game</button>
+      </div>
+    </aside>
+  </section>
+
+  <!-- GAME OVER -->
+  <section id="over" class="screen hidden">
+    <div id="overBox" class="over-box"></div>
+    <div class="lobby-actions center"><button id="againBtn" class="btn gold">Play again</button><a class="btn secondary" href="../index.html">Pick another game</a></div>
+  </section>
+
+<script type="module" src="js/ui/host.js"></script>
+</body>
+</html>

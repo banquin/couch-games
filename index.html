@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Couch Games</title>
+<link rel="icon" href="shared/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared/style.css">
+<style>
+  main { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 32px 16px; }
+  h1 { font-size: clamp(40px, 6vw, 96px); margin: 0; text-align: center; }
+  .sub { color: var(--muted); font-size: 20px; margin: 0; text-align: center; }
+  .games { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 420px)); gap: 24px; justify-content: center; width: 100%; }
+  .game { display: flex; flex-direction: column; gap: 10px; padding: 28px; border-radius: 26px; background: var(--panel); border: 3px solid var(--line);
+    text-decoration: none; color: var(--text); transition: transform .12s, border-color .12s, box-shadow .12s; }
+  .game:hover, .game:focus { transform: translateY(-4px); border-color: var(--a); box-shadow: 0 0 40px color-mix(in srgb, var(--a) 35%, transparent); outline: none; }
+  .game h2 { font-family: var(--display); font-size: 30px; margin: 0; color: var(--a); text-transform: uppercase; letter-spacing: .04em; }
+  .game p { margin: 0; font-size: 19px; }
+  .game .meta { color: var(--muted); font-size: 16px; }
+  .game .go { margin-top: 8px; align-self: flex-start; }
+  .game.soon { opacity: .5; pointer-events: none; }
+  .phone-note { color: var(--muted); font-size: 16px; text-align: center; max-width: 36em; }
+</style>
+</head>
+<body>
+<main>
+  <h1 class="logo">Couch Games</h1>
+  <p class="sub">Pick a game to host on this screen. Players join with their phones.</p>
+  <div id="games" class="games"></div>
+  <p class="phone-note">On a phone? You don't need this page: scan the QR code on the TV once the host picks a game.</p>
+</main>
+<script type="module">
+import { GAMES } from './shared/games.js';
+const box = document.getElementById('games');
+for (const g of GAMES) {
+  const a = document.createElement('a');
+  a.className = 'game'; a.href = g.host + location.search; a.style.setProperty('--a', g.accent);
+  a.innerHTML = `<h2>${g.name}</h2><p>${g.tagline}</p><span class="meta">${g.players}</span><span class="btn gold go">Host this game</span>`;
+  box.appendChild(a);
+  // Hide a game whose folder isn't there yet.
+  fetch(g.host, { method: 'HEAD' }).then(r => { if (!r.ok) { a.classList.add('soon'); a.querySelector('.go').textContent = 'Coming soon'; } }).catch(() => {});
+}
+</script>
+</body>
+</html>

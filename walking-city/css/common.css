@@ -1,0 +1,78 @@
+/* The Walking City — industrial sci-fi HUD (factory-automation look).
+   Deep space-blue background, thin steel-blue panel lines, orange highlights,
+   resources carry their own colours: Ore red-brown, Fuel yellow, Power blue, Part silver, Stride mint. */
+body.wc {
+  --bg: #060a12;
+  --panel: #0c1422e6;
+  --panel-2: #111c2e;
+  --line: #24395a;
+  --line-hi: #3d6596;
+  --text: #dfe9f5;
+  --muted: #8ea3bf;
+  --accent: #ff8f2e;        /* HUD orange */
+  --accent-2: #4aa8ff;      /* HUD blue */
+  --gold: #ffb04a;
+  --bad: #ff4d3a;
+  --good: #5cf2a8;
+  --storm: #ff4d6d;
+  --ore: #d8643f; --fuel: #f5c542; --power: #4aa8ff; --part: #d5dde8; --stride: #5cf2a8;
+  --font: 'Barlow', 'Segoe UI', system-ui, sans-serif;
+  --display: 'Chakra Petch', 'Barlow', system-ui, sans-serif;
+  --cut: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  font-family: var(--font);
+  background:
+    radial-gradient(1000px 700px at 50% 50%, #0f2140 0%, transparent 65%),
+    radial-gradient(700px 500px at 100% 0%, #3a1a0a55, transparent 70%),
+    linear-gradient(#ffffff05 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, #ffffff05 1px, transparent 1px) 0 0 / 40px 40px,
+    var(--bg);
+}
+body.wc .title { font-family: var(--display); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+body.wc .logo { font-family: var(--display); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #eaf2ff; background: none; -webkit-text-fill-color: currentColor;
+  text-shadow: 0 0 24px #4aa8ff55; }
+body.wc .logo b { color: var(--accent); font-weight: 700; text-shadow: 0 0 24px #ff8f2e66; }
+body.wc .btn { font-family: var(--display); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 0; clip-path: var(--cut);
+  background: linear-gradient(180deg, #2b6fc0, #1c4f91); color: #eaf4ff; box-shadow: none; border: 0; padding: 14px 24px; }
+body.wc .btn:active { transform: translateY(2px); }
+body.wc .btn.gold { background: linear-gradient(180deg, #ffa24a, #e0701a); color: #1a0c02; }
+body.wc .btn.secondary { background: #14223a; color: var(--text); box-shadow: inset 0 0 0 2px var(--line-hi); }
+body.wc input { border-radius: 0; clip-path: var(--cut); background: #081120; border-color: var(--line-hi); }
+body.wc input:focus { border-color: var(--accent); }
+body.wc .pill { border-radius: 4px; background: var(--panel-2); border-color: var(--line); }
+.c-gold { color: var(--gold); } .c-good { color: var(--good); } .c-bad { color: var(--bad); }
+.c-stride { color: var(--stride); } .c-storm { color: var(--storm); } .c-accent { color: var(--accent); }
+.ri { display: inline-block; vertical-align: middle; flex: none; }
+.stride-n { display: inline-flex; align-items: center; gap: 2px; font-weight: 700; color: var(--stride); }
+.crate { display: inline-block; width: 16px; height: 16px; margin-right: 3px; vertical-align: middle; border: 2px solid #05080f; transform: rotate(45deg) scale(.8); }
+.crate.s { background: #c9b28a; }
+.crate.p { background: var(--part); box-shadow: inset 0 0 0 3px #7f8ba0; }
+.hidden { display: none !important; }
+.hud { background: var(--panel); border: 1px solid var(--line); position: relative; clip-path: var(--cut); }
+
+/* Machines on tiles (TV and phone) */
+.tile .tbg { fill: #0e1828; stroke: #22385a; stroke-width: 2; transition: fill .3s, stroke .3s; }
+.tile.empty .tbg { fill: #0a111d; stroke: #1a2a44; stroke-dasharray: 4 6; }
+.tile .thatch { display: none; pointer-events: none; }
+.tile.off .thatch { display: block; }
+.tile .glyph { transition: opacity .3s, filter .3s; }
+.tile.idle .glyph { opacity: .42; filter: saturate(.2) brightness(.8); }
+.tile.active .tbg { fill: color-mix(in srgb, var(--glow) 14%, #0e1828); stroke: color-mix(in srgb, var(--glow) 70%, #22385a); stroke-width: 2.5; }
+.tile.active .glyph { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--glow) 60%, transparent)); }
+.tile.starved .tbg { stroke: var(--bad); stroke-width: 3.5; stroke-dasharray: 9 6; }
+.tile.starved .warn { animation: warnpulse 1.4s ease-in-out infinite; }
+@keyframes warnpulse { 50% { opacity: .45; } }
+.tile.fresh .tbg { stroke: #fff; stroke-width: 4; }
+.tile.surge .tbg { stroke: var(--gold); stroke-width: 5; }
+.tile .spin, .tile .rock, .tile .pulse { transform-box: fill-box; transform-origin: center; }
+.tile.active .spin { animation: spin 2.4s linear infinite; }
+.tile.active .spin.fast { animation-duration: 1.1s; }
+.tile.active .spin.slow { animation-duration: 4s; }
+.tile.active .spin.rev { animation-direction: reverse; }
+.tile.active .rock { animation: rock 1.6s ease-in-out infinite alternate; }
+.tile.active .pulse { animation: glowpulse 1.2s ease-in-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes rock { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+@keyframes glowpulse { 50% { opacity: .55; } }
+.tg-n { font-family: var(--display); font-weight: 700; font-size: 18px; fill: var(--stride); }
+.tg-x { font-family: var(--display); font-weight: 700; font-size: 13px; fill: #fff; paint-order: stroke; stroke: #05080f; stroke-width: 4px; }
+@media (prefers-reduced-motion: reduce) { .tile.active .spin, .tile.active .rock, .tile.active .pulse { animation: none; } }

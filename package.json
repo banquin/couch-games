@@ -1,0 +1,1 @@
+{ "name": "couch-games", "private": true, "type": "module", "scripts": { "start": "node server.js", "sim": "node orbital-couriers/sim/simulate.js", "test": "node orbital-couriers/test/engine.test.js" } }

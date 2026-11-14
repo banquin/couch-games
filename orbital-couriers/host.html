@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbital Couriers · TV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+<link rel="icon" href="../shared/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../shared/style.css">
+<link rel="stylesheet" href="css/host.css">
+<script src="../shared/vendor/peerjs.min.js"></script>
+<script src="../shared/vendor/qrcode.js"></script>
+</head>
+<body class="host">
+  <!-- LOBBY -->
+  <section id="lobby" class="screen">
+    <div class="lobby-left">
+      <h1 class="logo big">Orbital<br>Couriers</h1>
+      <p class="tagline">Program your flight. Race your rivals. Deliver first.</p>
+      <div class="join-box">
+        <div id="qr" class="qr"></div>
+        <div>
+          <div class="muted">Join on your phone</div>
+          <div id="joinUrl" class="join-url"></div>
+          <div class="muted" style="margin-top:14px">Room code</div>
+          <div id="roomCode" class="room-code">····</div>
+        </div>
+      </div>
+      <div id="netNote" class="net-note muted"></div>
+      <a class="back-link" href="../index.html">← All games</a>
+    </div>
+    <div class="lobby-right">
+      <h2 class="title">Captains <span id="countLabel" class="muted">0 / 5</span></h2>
+      <div id="slots" class="slots"></div>
+      <div class="lobby-actions">
+        <button id="addBot" class="btn secondary">+ Practice bot</button>
+        <button id="startBtn" class="btn gold" disabled>Launch (needs 3)</button>
+      </div>
+      <details class="howto">
+        <summary>How to play (30 seconds)</summary>
+        <ol>
+          <li><b>Contracts</b> wait at planets. Stop next to the pickup planet to load one (if you have room); stop next to its destination to deliver and score. Whoever picks it up first owns it.</li>
+          <li>Each round, secretly program <b>3 moves</b> on your phone. Your phone shows where you'll end up.</li>
+          <li>The TV flies everyone at once, one move at a time. Lowest score goes first.</li>
+          <li><b>Gravity wells</b> pull you 1 space toward their core when you stop on an arrow. A Burn that starts inside a well gets +1 space.</li>
+          <li>Fly into a ship and you <b>bump</b> it 1 space and take its spot.</li>
+          <li>Deliveries pay ★ points and the same in ⬢ credits. Spend credits on upgrades; leftovers are worth 1★ per 4 at the end. Most ★ after round 8 wins.</li>
+        </ol>
+      </details>
+    </div>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" class="screen hidden">
+    <div class="board-wrap"><svg id="board"></svg>
+      <div id="caption" class="caption hidden"></div>
+      <div id="banner" class="banner hidden"></div>
+    </div>
+    <aside class="rail">
+      <div class="rail-head">
+        <div class="round"><span class="title">Round <span id="roundNum">1</span></span><span class="muted"> / <span id="roundMax">8</span></span></div>
+        <div id="phaseText" class="phase-text"></div>
+      </div>
+      <h3 class="title small">Flight order · lowest score flies first</h3>
+      <div id="players" class="players"></div>
+      <h3 class="title small">Contracts</h3>
+      <div class="legend">Stop next to the pickup planet to load, next to the destination to deliver. Map chip = points + destination letter.</div>
+      <div id="contracts" class="contracts"></div>
+      <div id="log" class="log"></div>
+      <div class="rail-foot">
+        <span id="footCode" class="muted"></span>
+        <button id="pauseBtn" class="btn secondary tiny">Pause</button>
+        <button id="newBtn" class="btn secondary tiny">New game</button>
+      </div>
+    </aside>
+  </section>
+
+  <!-- GAME OVER -->
+  <section id="over" class="screen hidden">
+    <h1 class="logo big">Final standings</h1>
+    <div id="podium" class="podium"></div>
+    <div class="lobby-actions"><button id="againBtn" class="btn gold">Play again</button></div>
+  </section>
+
+<script type="module" src="js/ui/host.js"></script>
+</body>
+</html>

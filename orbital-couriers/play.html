@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#070a1c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Orbital Couriers · Pilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+<link rel="icon" href="../shared/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../shared/style.css">
+<link rel="stylesheet" href="css/phone.css">
+<script src="../shared/vendor/peerjs.min.js"></script>
+</head>
+<body class="phone">
+  <header id="top" class="top hidden">
+    <span id="meDot" class="dot big"></span>
+    <span id="meName" class="me-name"></span>
+    <span id="meCap" class="me-cap"></span>
+    <span class="spacer"></span>
+    <span id="meScore" class="stat c-gold"></span>
+    <span id="meCredits" class="stat c-cyan"></span>
+  </header>
+
+  <!-- JOIN -->
+  <section id="join" class="screen">
+    <h1 class="logo">Orbital<br>Couriers</h1>
+    <label class="muted">Room code</label>
+    <input id="codeIn" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="ABCD">
+    <label class="muted">Your name</label>
+    <input id="nameIn" maxlength="12" autocomplete="nickname" placeholder="Captain…">
+    <button id="joinBtn" class="btn gold wide">Join</button>
+    <p id="joinMsg" class="muted center"></p>
+  </section>
+
+  <!-- MESSAGE / WAITING -->
+  <section id="wait" class="screen hidden">
+    <div id="waitArt" class="wait-art"></div>
+    <h2 id="waitTitle" class="title center"></h2>
+    <p id="waitText" class="muted center"></p>
+    <div id="waitExtra"></div>
+  </section>
+
+  <!-- PROGRAM -->
+  <section id="program" class="screen hidden">
+    <div class="row-head">
+      <span class="title tiny" id="progRound"></span>
+      <span class="muted small" id="progHint"></span>
+    </div>
+    <div id="tip" class="tip hidden"></div>
+    <div id="holdBar" class="hold-bar"></div>
+    <div id="contractList" class="contract-strip"></div>
+    <div class="map-box"><svg id="mini"></svg></div>
+    <div id="slots" class="slots"></div>
+    <div id="handArea">
+      <div id="hand" class="hand"></div>
+    </div>
+    <div id="dirPad" class="dir-pad hidden">
+      <div class="dir-title"><span id="dirCard"></span> · which way?</div>
+      <div class="pad">
+        <span></span><button data-d="N">↑</button><span></span>
+        <button data-d="W">←</button><button id="dirCancel" class="cancel">✕</button><button data-d="E">→</button>
+        <span></span><button data-d="S">↓</button><span></span>
+      </div>
+    </div>
+    <button id="readyBtn" class="btn gold wide ready-btn" disabled>Lock in</button>
+  </section>
+
+  <!-- SHOP -->
+  <section id="shop" class="screen hidden">
+    <h2 class="title">Shipyard</h2>
+    <p class="muted">Spend credits ⬢ on upgrades, or save them: at the end of the game every 4 leftover credits become 1★.</p>
+    <div id="shopList" class="shop-list"></div>
+    <div id="shopHold"></div>
+    <button id="shopDone" class="btn gold wide">Done shopping</button>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+<script type="module" src="js/ui/phone.js"></script>
+</body>
+</html>

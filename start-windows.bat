@@ -1,0 +1,11 @@
+@echo off
+REM Double-click this file on Windows to start Orbital Couriers.
+cd /d "%~dp0"
+where node >nul 2>nul
+if errorlevel 1 (
+  echo Node.js is not installed. Get the LTS installer from https://nodejs.org, install it, then double-click this file again.
+  pause
+  exit /b 1
+)
+node server.js
+pause

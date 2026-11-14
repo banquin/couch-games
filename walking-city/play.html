@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#060a12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>The Walking City · Phone</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="../shared/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../shared/style.css">
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/phone.css">
+<script src="../shared/vendor/peerjs.min.js"></script>
+</head>
+<body class="phone wc">
+  <header id="top" class="top hidden">
+    <span id="meCrest"></span>
+    <span id="meName" class="me-name"></span>
+    <span class="spacer"></span>
+    <span id="meRound" class="me-round"></span>
+    <span id="meCrates" class="me-crates"></span>
+  </header>
+
+  <!-- JOIN -->
+  <section id="join" class="screen">
+    <h1 class="logo">The Walking<br><b>City</b></h1>
+    <label class="muted">Room code</label>
+    <input id="codeIn" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="ABCD">
+    <label class="muted">Your name</label>
+    <input id="nameIn" maxlength="12" autocomplete="nickname" placeholder="Chief…">
+    <button id="joinBtn" class="btn gold wide">Join</button>
+    <p id="joinMsg" class="muted center"></p>
+  </section>
+
+  <!-- MESSAGE / WAITING -->
+  <section id="wait" class="screen hidden">
+    <div id="waitArt" class="wait-art"></div>
+    <h2 id="waitTitle" class="title center"></h2>
+    <p id="waitText" class="muted center"></p>
+    <div id="waitExtra"></div>
+  </section>
+
+  <!-- PLAN -->
+  <section id="plan" class="screen hidden">
+    <div id="strip" class="strip"></div>
+    <div class="grid-box"><svg id="grid"></svg></div>
+    <div id="preview" class="preview"></div>
+    <div id="hint" class="hint"></div>
+    <div id="hand" class="hand"></div>
+    <div id="actions" class="actions hidden"></div>
+    <div id="commitRow" class="commit-row hidden"></div>
+    <button id="readyBtn" class="btn gold wide ready-btn" disabled>Ready</button>
+  </section>
+
+  <!-- LOCKED IN -->
+  <section id="locked" class="screen hidden">
+    <div class="grid-box small"><svg id="grid2"></svg></div>
+    <h2 class="title center">Locked in</h2>
+    <div id="lockedSummary" class="locked-summary"></div>
+    <p id="lockedWait" class="muted center"></p>
+    <button id="changeBtn" class="btn secondary wide">Change my plan</button>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+<script type="module" src="js/ui/phone.js"></script>
+</body>
+</html>
