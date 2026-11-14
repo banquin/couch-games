@@ -2,27 +2,27 @@
 // Pure markup from views; no rules here. Swapping to a 3D renderer replaces this file + icons.js.
 import { DEPTS, DEPT_INFO, MACHINES, TECHS, TERRAIN, CONFIG } from '../config.js';
 import { machineSvg, resIcon, deptBadge, RES_COLOR, BOLT } from './icons.js';
-import { esc, W, COLS, dn, dc } from './text.js';
+import { esc, W, COLS, NC, NR, NCELLS, dn, dc } from './text.js';
 
 const CS = 100, GAP = 6, STEP = CS + GAP;
-export const GRID_W = STEP * 4 - GAP;
-export const cellXY = i => [(i % 4) * STEP, Math.floor(i / 4) * STEP];
+export const GRID_W = STEP * NC - GAP, GRID_H = STEP * NR - GAP;
+export const cellXY = i => [(i % NC) * STEP, Math.floor(i / NC) * STEP];
 
 // One department's 4×4 grid as an <svg>. opts:
 //  dials {cell:v}, cells (phone extras), ghost {cell,type|tech}, sel cell, hl Set, letters bool,
 //  heatCap, lanes {col: 'hit'|'cov'|'warn'|'req'}, cls extra class, upgrade cell, tap bool
 export function gridSvg(grid, color, opts = {}) {
   const top = opts.letters ? 30 : 0;
-  let s = `<svg class="dgrid ${opts.cls || ''}" viewBox="-4 ${-top - 4} ${GRID_W + 8} ${GRID_W + top + 8}" style="--c:${color}">`;
+  let s = `<svg class="dgrid ${opts.cls || ''}" viewBox="-4 ${-top - 4} ${GRID_W + 8} ${GRID_H + top + 8}" style="--c:${color}">`;
   s += `<defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#18263d"/><stop offset="1" stop-color="#0c1525"/></linearGradient>
     <pattern id="hatch" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="12" fill="#ff4d3a55"/></pattern></defs>`;
-  for (let c = 0; c < 4; c++) {
+  for (let c = 0; c < NC; c++) {
     const x = c * STEP;
     const lane = opts.lanes && opts.lanes[c];
-    if (lane) s += `<rect class="lane ${lane}" x="${x - 3}" y="-3" width="${CS + 6}" height="${GRID_W + 6}" rx="14"/>`;
+    if (lane) s += `<rect class="lane ${lane}" x="${x - 3}" y="-3" width="${CS + 6}" height="${GRID_H + 6}" rx="14"/>`;
     if (opts.letters) s += `<text class="col-l ${lane || ''}" x="${x + CS / 2}" y="-9" text-anchor="middle">${COLS[c]}</text>`;
   }
-  for (let i = 0; i < 16; i++) s += tile(grid[i], i, color, opts);
+  for (let i = 0; i < NCELLS; i++) s += tile(grid[i], i, color, opts);
   return s + '</svg>';
 }
 
@@ -208,7 +208,7 @@ export function laneFlash(dept, col, kind = 'hit') {
   const el = document.createElement('div');
   el.className = 'fx-lane ' + kind;
   const x = g.ox + (col * STEP - 4) * g.k, w = (CS + 8) * g.k;
-  Object.assign(el.style, { left: x + 'px', top: (g.oy - 4 * g.k) + 'px', width: w + 'px', height: (GRID_W + 8) * g.k + 'px' });
+  Object.assign(el.style, { left: x + 'px', top: (g.oy - 4 * g.k) + 'px', width: w + 'px', height: (GRID_H + 8) * g.k + 'px' });
   el.innerHTML = `<svg viewBox="0 0 24 24" class="fx-bolt">${BOLT}</svg>${kind === 'cov' ? '<div class="fx-dome"></div>' : ''}<span>${kind === 'cov' ? esc(W.cover.toUpperCase()) + 'ED' : kind === 'hit' ? 'JAMMED' : 'MISS'}</span>`;
   put(el, 2000);
 }

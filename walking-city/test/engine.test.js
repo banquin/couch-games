@@ -19,7 +19,7 @@ t('a new game has five departments with their starting machines', () => {
 t('moves swap cells; only moves beyond the free ones idle', () => {
   const g = game();
   const grid = g.depts.fab.grid;
-  const mv = E.movedMachines(g, grid, [[4, 0], [5, 1]]);
+  const mv = E.movedMachines(g, grid, [[7, 0], [8, 1]]);
   assert.strictEqual(mv.moved.length, 2);
   assert.strictEqual(mv.idle.size, 2 - E.freeMoves(g));
   assert.strictEqual(mv.grid[0].type, 'drill');
@@ -35,22 +35,22 @@ t('normalizePlan drops a build the department cannot afford', () => {
 
 t('asks are derived from the plan (power = draw − aux)', () => {
   const g = game();
-  const { plan } = E.normalizePlan(g, 'loco', { dials: { 5: 3, 7: 3 } });
+  const { plan } = E.normalizePlan(g, 'loco', { dials: { 8: 3, 10: 3 } });
   assert.strictEqual(plan.asks.power, 6 - CONFIG.auxPower);
 });
 
 t('engine throttle is capped by heat', () => {
   const g = game();
-  const e = g.depts.loco.grid[5];
+  const e = g.depts.loco.grid[8];
   e.heat = 4;
-  assert.ok(E.maxThrottle(g, g.depts.loco.grid, 5, false) < 3);
+  assert.ok(E.maxThrottle(g, g.depts.loco.grid, 8, false) < 3);
 });
 
 t('strikes on an empty column arc to the nearest occupied one', () => {
-  const grid = Array(16).fill(null);
+  const grid = Array(E.CELLS).fill(null);
   grid[2] = { type: 'drill' };
   assert.strictEqual(E.strikeTarget(grid, 0), 2);
-  assert.strictEqual(E.strikeTarget(Array(16).fill(null), 1), -1);
+  assert.strictEqual(E.strikeTarget(Array(E.CELLS).fill(null), 1), -1);
 });
 
 t('projection never changes the real state', () => {

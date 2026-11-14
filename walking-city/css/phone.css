@@ -89,10 +89,10 @@ body.wc .btn.wide { width: 100%; margin-top: 8px; font-size: 18px; }
 
 /* Shield storm map */
 .sm { display: flex; flex-direction: column; gap: 4px; }
-.sm-row { display: grid; grid-template-columns: 44px repeat(4, 1fr); gap: 4px; }
+.sm-row { display: grid; grid-template-columns: 40px repeat(var(--nc, 6), 1fr); gap: 3px; }
 .sm-name, .sm-col { font-family: var(--display); font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }
 .sm-col { color: var(--muted); }
-.sm-cell { height: 40px; background: #0a1322; border: 1px solid var(--line); position: relative; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.sm-cell { height: 38px; min-width: 0; background: #0a1322; border: 1px solid var(--line); position: relative; display: flex; align-items: center; justify-content: center; gap: 4px; }
 .sm-cell .sm-n { font-size: 12px; color: var(--muted); }
 .sm-cell .sm-b { font-size: 18px; }
 .sm-cell.strike { border-color: var(--bad); background: #3a0e0a; }
@@ -121,3 +121,4 @@ body.wc .btn.wide { width: 100%; margin-top: 8px; font-size: 18px; }
 .locked-summary { display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; font-size: 15px; }
 
 .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: #060a12; border: 2px solid var(--accent); padding: 10px 16px; max-width: 90vw; z-index: 30; font-size: 15px; clip-path: var(--cut); }
+.rp-h.small .tbtn { min-width: 34px; height: 32px; padding: 0 4px; }

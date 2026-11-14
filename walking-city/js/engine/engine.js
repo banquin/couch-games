@@ -5,14 +5,15 @@ import { DEPTS, DEPT_INFO, MACHINES, UPGRADE_COST, HEAT_CAP, THROTTLE, ARMORY_PL
   OVERCLOCK, UNLOCKS, TERRAIN, FAST_TERRAIN, RICH_TERRAIN, CONFIG } from '../config.js';
 import { makeRng, randInt, shuffle } from './rng.js';
 
-export const COLS = 4, CELLS = 16, COL_NAMES = 'ABCD';
+export const COLS = CONFIG.grid.cols, ROWS = CONFIG.grid.rows, CELLS = COLS * ROWS, COL_NAMES = 'ABCDEFGHIJ';
 export const colOf = i => i % COLS;
 export const rowOf = i => Math.floor(i / COLS);
 export const cellName = i => COL_NAMES[colOf(i)] + (rowOf(i) + 1);
+export const colCells = c => Array.from({ length: ROWS }, (_, r) => r * COLS + c);
 export function adj(i) {
   const r = rowOf(i), c = colOf(i), out = [];
-  if (r > 0) out.push(i - COLS); if (r < 3) out.push(i + COLS);
-  if (c > 0) out.push(i - 1); if (c < 3) out.push(i + 1);
+  if (r > 0) out.push(i - COLS); if (r < ROWS - 1) out.push(i + COLS);
+  if (c > 0) out.push(i - 1); if (c < COLS - 1) out.push(i + 1);
   return out;
 }
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -231,7 +232,7 @@ export function normalizePlan(state, d, raw) {
     if (a === b || !(a >= 0 && a < CELLS && b >= 0 && b < CELLS)) continue;
     moves.push([a | 0, b | 0]);
   }
-  p.moves = moves.slice(0, 16);
+  p.moves = moves.slice(0, CELLS);
   const mv = movedMachines(state, dept.grid, p.moves);
   const g = mv.grid;
   // build: a machine, an upgrade, or (Research) a tech
@@ -293,7 +294,7 @@ export function normalizePlan(state, d, raw) {
     const covers = [], used = {};
     let armory = 0;
     for (const c of Array.isArray(p.covers) ? p.covers : []) {
-      if (!c || !DEPTS.includes(c.dept) || !(c.col >= 0 && c.col < 4)) continue;
+      if (!c || !DEPTS.includes(c.dept) || !(c.col >= 0 && c.col < COLS)) continue;
       if (covers.some(x => x.dept === c.dept && x.col === c.col)) continue;
       if (c.src === 'armory') {
         if (armory < res.armory && plates >= ARMORY_PLATES) { armory++; plates -= ARMORY_PLATES; covers.push({ dept: c.dept, col: c.col, src: 'armory' }); }
@@ -322,7 +323,7 @@ export function normalizePlan(state, d, raw) {
   } else p.overclock = [];
   // next build (for the plate ask)
   if (p.next && !(p.next.type && MACHINES[p.next.type] && MACHINES[p.next.type].dept === d) && !(p.next.upgrade != null && g[p.next.upgrade])) p.next = null;
-  p.covReq = (Array.isArray(p.covReq) ? p.covReq : []).filter((c, i, arr) => c >= 0 && c < 4 && arr.indexOf(c) === i);
+  p.covReq = (Array.isArray(p.covReq) ? p.covReq : []).filter((c, i, arr) => c >= 0 && c < COLS && arr.indexOf(c) === i);
   p.asks = deriveAsks(state, d, p, plates);
   return { plan: p, errors, left: { plates, insight } };
 }
@@ -355,9 +356,9 @@ export function stormSpeed(state, round) {
 }
 // A strike on an empty lane arcs to the nearest occupied column of that department (ties go left).
 export function strikeTarget(grid, col) {
-  const occ = c => [0, 1, 2, 3].some(r => grid[r * 4 + c]);
+  const occ = c => colCells(c).some(i => grid[i]);
   if (occ(col)) return col;
-  for (let k = 1; k < 4; k++) { if (col - k >= 0 && occ(col - k)) return col - k; if (col + k < 4 && occ(col + k)) return col + k; }
+  for (let k = 1; k < COLS; k++) { if (col - k >= 0 && occ(col - k)) return col - k; if (col + k < COLS && occ(col + k)) return col + k; }
   return -1;
 }
 
@@ -483,12 +484,12 @@ export function resolveRound(state, opts = {}) {
       const col = strikeTarget(g, l.col);
       const isCov = col >= 0 && covered.has(l.dept + col);
       const hit = [];
-      if (col >= 0 && !isCov) for (let row = 0; row < 4; row++) {
-        const i = row * 4 + col, m = g[i];
+      if (col >= 0 && !isCov) for (const i of colCells(col)) {
+        const m = g[i];
         if (m) { m.jam = Math.max(m.jam, CONFIG.jam); hit.push({ cell: i, type: m.type }); ev.jammed.push({ dept: l.dept, cell: i, type: m.type }); }
       }
       if (isCov) {
-        const saved = [0, 1, 2, 3].map(row => g[row * 4 + col]).filter(m => m && !m.jam).map(m => m.type);
+        const saved = colCells(col).map(i => g[i]).filter(m => m && !m.jam).map(m => m.type);
         if (saved.length) ev.saves.push({ dept: l.dept, col, saved });
       }
       ev.strikes.push({ dept: l.dept, col: l.col, at: col, covered: isCov, hit });
@@ -731,6 +732,7 @@ function powerCause(state, ev, d) {
   const aux = d === 'power' ? 0 : (ev.power.aux || 0);
   const got = Math.max(0, (ev.power.delivered[d] || 0) - aux), pledge = ev.power.pledged[d] || 0, ask = state.depts[d].plan.asks.power;
   if (got >= pledge && pledge < ask) return [`${DEPT_NAME.power} pledged ${pledge} ${W.power} of ${ask} asked`];
+  if (got >= pledge) return [`${DEPT_NAME[d]} got ${got} ${W.power} but its machines needed more`];
   const off = ev.power.genBy.find(g => g.why);
   if (off) return [`${W.power} came up ${pledge - got} short`, `${mname(off.type)} ${cellName(off.cell)} ${off.why === 'jammed' ? 'was hit by ' + W.lightning : off.why}`];
   return [`${W.power} came up ${pledge - got} short`];

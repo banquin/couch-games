@@ -1,10 +1,11 @@
 // Words for recaps and labels. Names come from theme.js via config.
-import { DEPT_INFO, MACHINES, TECHS, TERRAIN, OVERCLOCK } from '../config.js';
+import { DEPT_INFO, MACHINES, TECHS, TERRAIN, OVERCLOCK, CONFIG } from '../config.js';
 import { THEME } from '../theme.js';
 export const W = THEME.words;
 export const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-export const COLS = 'ABCD';
-export const cellName = i => COLS[i % 4] + (Math.floor(i / 4) + 1);
+export const NC = CONFIG.grid.cols, NR = CONFIG.grid.rows, NCELLS = NC * NR;
+export const COLS = 'ABCDEFGHIJ'.slice(0, NC);
+export const cellName = i => COLS[i % NC] + (Math.floor(i / NC) + 1);
 export const dn = d => DEPT_INFO[d].name;
 export const dc = d => DEPT_INFO[d].color;
 export const mn = t => MACHINES[t].name;

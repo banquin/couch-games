@@ -98,7 +98,7 @@ export function privateView(state, d, opts = {}) {
     me.lanes = {};
     for (const x of DEPTS) {
       const gg = E.gridAfterMoves(state.depts[x].grid, state.depts[x].plan.moves);
-      me.lanes[x] = [0, 1, 2, 3].map(c => [0, 1, 2, 3].map(r => gg[r * 4 + c] ? gg[r * 4 + c].type : null));
+      me.lanes[x] = Array.from({ length: E.COLS }, (_, c) => E.colCells(c).map(i => gg[i] ? gg[i].type : null));
     }
     me.covReqs = Object.fromEntries(DEPTS.map(x => [x, state.depts[x].plan.covReq.slice()]));
   }

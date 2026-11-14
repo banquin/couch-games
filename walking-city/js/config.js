@@ -93,7 +93,8 @@ export const CONFIG = {
   jam: 1,                                      // [T] rounds a strike jams a lane's machines (1 = this round only)
   stormSpeed: [9, 14, 20, 26, 32, 38, 45, 52], // [T] Standard
   strikes:    [1, 2, 2, 3, 3, 4, 5, 6],        // [T] of 20 lanes
-  auxPower: 1,                                 // [T] every department's own backup cell: 1 power a round
+  auxPower: 1,
+  grid: { cols: 6, rows: 3 },                  // [T] each car's floor: columns are ember lanes (A–F), rows run along the car                                 // [T] every department's own backup cell: 1 power a round
   modes: {
     first:    { name: 'First Voyage', haven: 150, stormStart: -15, stormScale: 0.9,  strikeAdj: -1 },
     standard: { name: 'Standard',     haven: 175, stormStart: -15, stormScale: 1.0,  strikeAdj: 0 },
@@ -101,11 +102,11 @@ export const CONFIG = {
   },
   // Starting layouts: [type, cell, extra state]
   starts: {
-    power:    [['reactor', 5, { set: 3 }], ['turbine', 6, { set: 2 }], ['capacitor', 9, { store: 2 }]],
-    fab:      [['drill', 4], ['smelter', 5], ['smelter', 6], ['drill', 7], ['press', 9]],
-    loco:     [['engine', 5, { throttle: 2 }], ['radiator', 6], ['engine', 7, { throttle: 2 }]],
-    shield:   [['projector', 5, { charged: true }], ['armory', 6]],
-    research: [['lab', 5], ['uplink', 6]],
+    power:    [['reactor', 8, { set: 3 }], ['turbine', 9, { set: 2 }], ['capacitor', 14, { store: 2 }]],
+    fab:      [['drill', 7], ['smelter', 8], ['smelter', 9], ['drill', 10], ['press', 14]],
+    loco:     [['engine', 8, { throttle: 2 }], ['radiator', 9], ['engine', 10, { throttle: 2 }]],
+    shield:   [['projector', 8, { charged: true }], ['armory', 9]],
+    research: [['lab', 8], ['uplink', 9]],
   },
 };
 

@@ -116,7 +116,7 @@ function planFab(state, o) {
   p.moves = [];
   const val = gg => { const c = E.fabCaps(state, gg, 99); return c.plates + 1.5 * Math.min(c.press, 3); };
   let best = val(g0), bm = null;
-  for (let a = 0; a < 16; a++) for (let b = a + 1; b < 16; b++) {
+  for (let a = 0; a < E.CELLS; a++) for (let b = a + 1; b < E.CELLS; b++) {
     if (!g0[a] && !g0[b]) continue;
     const gg = E.gridAfterMoves(g0, [[a, b]]); const v = val(gg);
     if (v > best + 1.9) { best = v; bm = [a, b]; }
@@ -260,7 +260,7 @@ function laneValue(state, d, col) {
   const c = E.strikeTarget(g, col);
   if (c < 0) return { col: c, v: 0 };
   let v = 0;
-  for (let r = 0; r < 4; r++) { const m = g[r * 4 + c]; if (m) v += (LANE_W[m.type] || 1) * (m.jam > 1 ? 0.3 : 1) * (dep.plan.covReq.includes(c) ? 2 : 1); }
+  for (const i of E.colCells(c)) { const m = g[i]; if (m) v += (LANE_W[m.type] || 1) * (m.jam > 1 ? 0.3 : 1) * (dep.plan.covReq.includes(c) ? 2 : 1); }
   return { col: c, v };
 }
 function planShield(state, o) {
@@ -293,7 +293,7 @@ function planShield(state, o) {
   p.covers = covers;
   // Build: more Projectors in the most valuable column, Radar once, then upgrades.
   const colVal = c => DEPTS.reduce((s, d) => s + laneValue(state, d, c).v, 0);
-  const projCell = bestCell(g, i => colVal(E.colOf(i)) - 3 * (coveredCols(state).has(E.colOf(i)) ? 1 : 0) + 1.5 * [i - 1, i + 1].filter(j => j >= 0 && j < 16 && E.rowOf(j) === E.rowOf(i) && g[j] && g[j].type === 'projector').length);
+  const projCell = bestCell(g, i => colVal(E.colOf(i)) - 3 * (coveredCols(state).has(E.colOf(i)) ? 1 : 0) + 1.5 * [i - 1, i + 1].filter(j => j >= 0 && j < E.CELLS && E.rowOf(j) === E.rowOf(i) && g[j] && g[j].type === 'projector').length);
   const lowProj = cellsOf(g, 'projector').find(i => g[i].lvl < 2);
   const opts = [];
   if (projN < Math.ceil(strikesNext / 2) + 1 && projCell >= 0) opts.push({ type: 'projector', cell: projCell });
@@ -391,7 +391,7 @@ function randomize(state, d, p, rng) {
     p.covers = [];
     const cap = E.shieldCapacity(state, g, null);
     for (const pj of cap.projectors) p.covers.push({ dept: DEPTS[randInt(rng, 5)], col: pj.cols[0], src: pj.cell });
-    for (let k = 0; k < cap.armory; k++) if (rand(rng) < 0.5) p.covers.push({ dept: DEPTS[randInt(rng, 5)], col: randInt(rng, 4), src: 'armory' });
+    for (let k = 0; k < cap.armory; k++) if (rand(rng) < 0.5) p.covers.push({ dept: DEPTS[randInt(rng, 5)], col: randInt(rng, E.COLS), src: 'armory' });
   }
   if (d === 'research') {
     p.overclock = rand(rng) < 0.5 ? [['power', 'fab', 'loco', 'shield'][randInt(rng, 4)]] : [];

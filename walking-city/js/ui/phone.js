@@ -6,7 +6,7 @@ import { gridAfterMoves } from '../engine/engine.js';
 import { joinRoom } from '../../../shared/net.js';
 import { gridSvg } from './board.js';
 import { resIcon, deptBadge, machineSvg } from './icons.js';
-import { esc, W, COLS, cellName, dn, dc, mn, tag, recapLines } from './text.js';
+import { esc, W, COLS, NCELLS, cellName, dn, dc, mn, tag, recapLines } from './text.js';
 
 const $ = s => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -179,8 +179,8 @@ function myGrid(tap = true) {
   const sg = startGrid(), moved = new Set(); g.forEach((m, i) => { if (m && (!sg[i] || sg[i].id !== m.id)) moved.add(i); });
   const cells = g.map((m, i) => { const sc = (view.me.cells || [])[i] || {}; return m ? { ...sc, moved: moved.has(i) } : null; });
   const hl = new Set();
-  if (mode && mode.kind === 'move') for (let i = 0; i < 16; i++) if (i !== mode.from) hl.add(i);
-  if (mode && mode.kind === 'tech') for (let i = 0; i < 16; i++) if (!g[i]) hl.add(i);
+  if (mode && mode.kind === 'move') for (let i = 0; i < NCELLS; i++) if (i !== mode.from) hl.add(i);
+  if (mode && mode.kind === 'tech') for (let i = 0; i < NCELLS; i++) if (!g[i]) hl.add(i);
   return gridSvg(g, dc(d), { letters: true, tap, sel, ghost, dials: plan.dials, cells, heatCap: view.me.heatCap, lanes, hl, upgrade: plan.build && plan.build.upgrade != null ? plan.build.upgrade : null });
 }
 
@@ -342,7 +342,7 @@ function rolePanel(d) {
   return '';
 }
 function covReqRow() {
-  return `<div class="rp-h small">Ask ${esc(dn('shield'))} to ${esc(W.cover)}: ${[0, 1, 2, 3].map(c => `<button class="tbtn ${plan.covReq.includes(c) ? 'on' : ''}" data-req="${c}">${COLS[c]}</button>`).join('')}</div>`;
+  return `<div class="rp-h small">Ask ${esc(dn('shield'))} to ${esc(W.cover)}: ${[...COLS].map((_, c) => `<button class="tbtn ${plan.covReq.includes(c) ? 'on' : ''}" data-req="${c}">${COLS[c]}</button>`).join('')}</div>`;
 }
 
 function shieldPanel() {
@@ -358,7 +358,7 @@ function shieldPanel() {
   };
   const rows = DEPTS.map(x => {
     const lanes = me.lanes[x];
-    return `<div class="sm-row"><span class="sm-name" style="color:${dc(x)}">${esc(DEPT_INFO[x].short)}</span>${[0, 1, 2, 3].map(c => {
+    return `<div class="sm-row"><span class="sm-name" style="color:${dc(x)}">${esc(DEPT_INFO[x].short)}</span>${[...COLS].map((_, c) => {
       const st = strikes.find(s => s.dept === x && s.at === c);
       const nx = (me.strikesNext || []).some(s => s.dept === x && s.col === c);
       const cov = plan.covers.find(k => k.dept === x && k.col === c);
@@ -371,7 +371,7 @@ function shieldPanel() {
   }).join('');
   const projLeft = cap.projectors.reduce((s, pj) => s + pj.covers - (used[pj.cell] || 0), 0);
   return `<div class="rp"><div class="rp-h">${esc(W.Lightning)} map: <b>${strikes.length}</b> this round <span class="muted">(numbers = machines in that column)</span></div>
-    <div class="sm"><div class="sm-row"><span class="sm-name"></span>${[0, 1, 2, 3].map(c => `<span class="sm-col">${COLS[c]}</span>`).join('')}</div>${rows}</div>
+    <div class="sm"><div class="sm-row"><span class="sm-name"></span>${[...COLS].map((_, c) => `<span class="sm-col">${COLS[c]}</span>`).join('')}</div>${rows}</div>
     <div class="muted small">Tap a struck column to ${esc(W.cover)} it. ${esc(mn('projector'))}s left: ${projLeft}${cap.armory ? ` · ${esc(mn('armory'))}: ${cap.armory - (used.armory || 0)} (2 ${W.plates} each)` : ''}${cap.oc ? ` · boost: ${cap.oc - (used.oc || 0)}` : ''}. Gold = someone asked. ${me.strikesNext ? 'Dotted = next round.' : ''}</div></div>`;
 }
 
