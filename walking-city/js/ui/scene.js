@@ -16,12 +16,15 @@ export async function makeScene() {
   if (want3d && webgl()) {
     try {
       const mod = await import('./train3d.js');
+      document.body.classList.add('three'); // show the stage first so the renderer can measure it
       const stage = document.getElementById('stage');
       const train = await mod.createTrain(stage, { cols: CONFIG.grid.cols, rows: CONFIG.grid.rows, order: ORDER });
-      document.body.classList.add('three');
+      if (train.ready) await Promise.race([train.ready, new Promise((_, no) => setTimeout(() => no(new Error('assets timed out')), 20000))]);
       return scene3d(train);
     } catch (e) {
       console.warn('3D train unavailable, using the 2D board:', e && e.message);
+      document.body.classList.remove('three');
+      const st = document.getElementById('stage'); if (st) st.innerHTML = '';
     }
   }
   return scene2d();

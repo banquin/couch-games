@@ -39,17 +39,17 @@ const ROLES = (process.env.ROLES || 'loco,power').split(',');
     for (const { role, ph } of phones) {
       await ph.waitForSelector('#plan:not(.hidden)', { timeout: 120000 });
       await ph.waitForTimeout(500);
+      // locator clicks re-find the element, because the phone redraws whenever a fresh view arrives
+      const tap = async (sel, last) => { for (let k = 0; k < 3; k++) { const l = last ? ph.locator(sel).last() : ph.locator(sel).first(); if (!(await l.count())) return false; try { await l.click({ timeout: 3000 }); return true; } catch (e) { await ph.waitForTimeout(300); } } return false; };
       if (role === 'loco') {
         // set the first engine to its highest legal throttle, then build on an empty cell if affordable
-        const engine = await ph.$('#gridBox .tile.m-engine');
-        if (engine) { await engine.click(); const t = await ph.$$('#sheet .tbtn:not([disabled])'); if (t.length) await t[t.length - 1].click(); await ph.waitForTimeout(200); }
-        const empty = await ph.$$('#gridBox .tile.empty');
-        if (empty.length) { await empty[0].click(); const b = await ph.$('#sheet [data-build]'); if (b) await b.click(); else { const n = await ph.$('#sheet [data-next]'); if (n) await n.click(); } }
-        const r = await ph.$('[data-route="1"]'); if (r && round === 2) await r.click();
+        if (await tap('#gridBox .tile.m-engine')) { await tap('#sheet .tbtn:not([disabled])', true); await ph.waitForTimeout(200); }
+        if (await tap('#gridBox .tile.empty')) { if (!(await tap('#sheet [data-build]'))) await tap('#sheet [data-next]'); }
+        if (round === 2) await tap('[data-route="1"]');
         if (round === 1) await ph.screenshot({ path: OUT + '/2-phone-loco.png', fullPage: true });
       }
       if (role === 'power') {
-        const f = await ph.$('[data-fill="power"]'); if (f) await f.click(); await ph.waitForTimeout(200); const fit = await ph.$('[data-x2="fit"]'); if (fit) await fit.click();
+        await tap('[data-fill="power"]'); await ph.waitForTimeout(200); await tap('[data-x2="fit"]');
         await ph.waitForTimeout(200);
         if (round === 1) await ph.screenshot({ path: OUT + '/2-phone-power.png', fullPage: true });
       }
