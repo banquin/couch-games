@@ -1,9 +1,12 @@
-// Phone controller: your hand, your district, and your plan for the round.
-import { CARDS } from '../config.js';
-import { resolveProduction } from '../engine/production.js';
+// Phone controller: pick a department, then plan your round on your own 4×4 grid.
+// The TV is the authority: every edit is sent as a draft plan, and the TV sends back a cleaned-up view.
+import { DEPTS, DEPT_INFO, MACHINES, TECHS, TERRAIN, OVERCLOCK, CONFIG, THROTTLE } from '../config.js';
+import { THEME } from '../theme.js';
+import { gridAfterMoves } from '../engine/engine.js';
 import { joinRoom } from '../../../shared/net.js';
-import { cardFace, crest, resIcon, tileGlyph, resPath, RES_COLOR, KIND_TINT } from './art.js';
-import { esc, cardName, leanHint } from './text.js';
+import { gridSvg } from './board.js';
+import { resIcon, deptBadge, machineSvg } from './icons.js';
+import { esc, W, COLS, NCELLS, cellName, dn, dc, mn, tag, recapLines } from './text.js';
 
 const $ = s => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -14,9 +17,12 @@ const store = {
 let pid = store.get('wc-pid');
 if (!pid) { pid = 'p' + Math.random().toString(36).slice(2, 10); store.set('wc-pid', pid); }
 
-let conn = null, view = null, lobby = null, code = null, seq = 0, gotReply = false, lastMsg = 0, lastViewSeq = 0;
-// draft: { round, assign: {uid: 'build'|'left'|'right'|'keep'|'scrap'|'action'}, tile, tile2, commit, sel }
-let draft = null;
+let conn = null, view = null, code = null, seq = 0, gotReply = false, lastMsg = 0, lastViewSeq = 0;
+let plan = null, planRound = 0, lastEdit = 0, sendTimer = null;
+let sel = null, mode = null; // mode: {kind:'move', from} | {kind:'tech', tech}
+
+$('#logo').innerHTML = `${esc(THEME.title[0])}<br><b>${esc(THEME.title[1])}</b>`;
+document.title = THEME.title.join(' ') + ' · Phone';
 
 // ---------------- join ----------------
 $('#codeIn').value = (params.get('room') || store.get('wc-room') || '').toUpperCase();
@@ -41,15 +47,9 @@ async function doJoin() {
     onNoHost: () => { if (!gotReply) { $('#joinMsg').textContent = `No game with code ${code} is open. Check the TV.`; $('#joinBtn').disabled = false; } },
     onMessage,
   });
-  // Heartbeat: keep saying hello until the TV answers, and again whenever it goes quiet (phones sleep).
-  setInterval(() => {
-    if (!gotReply || Date.now() - lastMsg > 15000) { conn.reconnect && conn.reconnect(); hello(); }
-  }, 2500);
+  setInterval(() => { if (!gotReply || Date.now() - lastMsg > 15000) { conn.reconnect && conn.reconnect(); hello(); } }, 2500);
   hello();
-  // If nothing answers for a while, say so instead of spinning forever.
-  setTimeout(() => {
-    if (!gotReply) $('#joinMsg').textContent = 'Still connecting… This can take up to a minute. If it never connects, the TV\'s network or computer is probably blocking it: try hosting from another device (a personal laptop or tablet works).';
-  }, 20000);
+  setTimeout(() => { if (!gotReply) $('#joinMsg').textContent = 'Still connecting… This can take up to a minute. If it never connects, the TV\'s network is probably blocking it: try hosting from another device.'; }, 20000);
 }
 function hello() { if (conn) conn.send({ type: 'hello', name: store.get('wc-name'), reclaim: true }); }
 let lock = null;
@@ -57,16 +57,17 @@ async function wakeLock() { try { lock = await navigator.wakeLock?.request('scre
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && conn) { wakeLock(); gotReply = false; conn.reconnect && conn.reconnect(); hello(); }
 });
-function send(action) { conn && conn.send({ type: 'action', action, seq: ++seq }); }
+const sendMsg = m => conn && conn.send({ ...m, seq: ++seq });
+const act = action => sendMsg({ type: 'action', action });
 
 function onMessage(msg) {
   gotReply = true; lastMsg = Date.now();
   if (msg.seq) { if (msg.seq < lastViewSeq) return; lastViewSeq = msg.seq; }
-  if (msg.type === 'lobby') { lobby = msg; view = null; return renderLobby(); }
+  if (msg.type === 'lobby') { view = null; return renderPick(msg.claims, msg.you, false); }
+  if (msg.type === 'pick') { view = null; return renderPick(msg.claims, null, true); }
   if (msg.type === 'view') { view = msg.view; return render(); }
   if (msg.type === 'reject') return toast(msg.error);
-  if (msg.type === 'full') return waitScreen('City is full', 'This game already has 5 districts.', '#e0b46a');
-  if (msg.type === 'inProgress') return waitScreen('Game in progress', 'This game started without you. Catch the next one!', '#e0b46a');
+  if (msg.type === 'toast') return toast(msg.text);
 }
 
 // ---------------- screens ----------------
@@ -74,307 +75,390 @@ function show(id) {
   for (const s of ['#join', '#wait', '#plan', '#locked']) $(s).classList.toggle('hidden', s !== id);
   $('#top').classList.toggle('hidden', id === '#join');
 }
-function waitScreen(title, text, color, extra = '') {
-  show('#wait');
-  $('#waitArt').innerHTML = crest(color || '#e0b46a', 120);
-  $('#waitTitle').textContent = title;
-  $('#waitText').innerHTML = text;
-  $('#waitExtra').innerHTML = extra;
+function topBar(d) {
+  const t = $('#top');
+  if (!d) { t.innerHTML = `<span class="me-name">${esc(store.get('wc-name') || '')}</span><span class="spacer"></span><span class="muted">Room ${esc(code || '')}</span>`; t.style.removeProperty('--c'); return; }
+  const me = view.me, h = me.hold;
+  t.style.setProperty('--c', dc(d));
+  const left = me.left || {};
+  t.innerHTML = `${deptBadge(dc(d), DEPT_INFO[d].short[0], 30)}<span class="me-name">${esc(dn(d))}</span><span class="spacer"></span>
+    <span class="me-round">R${view.round}/${view.rounds}</span>
+    <span class="me-hold">${resIcon('plates', 18)}<b>${left.plates != null ? left.plates : h.plates}</b>${left.plates != null && left.plates !== h.plates ? `<small>/${h.plates}</small>` : ''}</span>
+    ${d === 'loco' || h.gears ? `<span class="me-hold">${resIcon('gears', 18)}<b>${h.gears}</b></span>` : ''}
+    ${d === 'research' ? `<span class="me-hold">${resIcon('insight', 18)}<b>${left.insight != null ? left.insight : h.insight}</b></span>` : ''}
+    ${d === 'research' && h.cores ? `<span class="me-hold">${resIcon('cores', 18)}<b>${h.cores}</b></span>` : ''}`;
 }
-function setTop(name, color, round, crates) {
-  $('#top').style.setProperty('--c', color);
-  $('#meCrest').innerHTML = crest(color, 34);
-  $('#meName').textContent = name;
-  $('#meRound').textContent = round ? `Round ${round}` : '';
-  $('#meCrates').innerHTML = crates ? `${'<i class="crate s"></i>'.repeat(crates.supply)}${'<i class="crate p"></i>'.repeat(crates.part)}` : '';
-}
-function renderLobby() {
-  const me = lobby.players[lobby.you];
-  if (!me) return waitScreen('Joining…', '', '');
-  setTop(me.name, me.color);
-  const others = lobby.players.map(p => `<span class="pill"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</span>`).join(' ');
-  waitScreen(`You're in, ${me.name}!`, 'Look at the TV. The game starts when the host presses Start.', me.color,
-    `<div class="pills">${others}</div>`);
+
+function renderPick(claims, you, midGame) {
+  show('#wait'); topBar(null);
+  const w = $('#wait');
+  w.innerHTML = `<h2 class="title center">${you ? 'You\'re in' : midGame ? 'Take over a car' : 'Pick your car'}</h2>
+    <p class="muted center">${you ? `Waiting for the TV to start. You can still switch.` : midGame ? `The game is running. Bots are driving these; tap one to take it over.` : `Bots run any car nobody picks.`}</p>
+    <div class="picks">${DEPTS.map(d => {
+      const info = DEPT_INFO[d], who = claims[d], mine = you === d;
+      const taken = who && !mine;
+      return `<button class="pick ${mine ? 'mine' : ''} ${taken ? 'taken' : ''}" data-d="${d}" style="--c:${info.color}" ${taken ? 'disabled' : ''}>
+        ${deptBadge(info.color, info.short[0], 40)}
+        <span class="pick-main"><b>${esc(info.name)}</b> <span class="pips">${'●'.repeat(info.difficulty)}${'○'.repeat(3 - info.difficulty)}</span>
+        <span class="pick-blurb">${esc(info.blurb)}</span></span>
+        <span class="pick-who">${mine ? 'YOU' : who ? esc(who) : 'bot'}</span></button>`;
+    }).join('')}</div>
+    ${you ? `<button id="unclaim" class="btn secondary wide">Leave ${esc(dn(you))}</button>` : ''}`;
+  w.querySelectorAll('.pick').forEach(b => b.onclick = () => sendMsg({ type: 'claim', dept: b.dataset.d }));
+  const u = $('#unclaim'); if (u) u.onclick = () => sendMsg({ type: 'unclaim' });
 }
 
 function render() {
-  const v = view, me = v.me;
-  if (!me) return;
-  setTop(me.name, me.color, v.round, me.crates);
-  if (v.phase === 'over') {
-    const won = v.outcome === 'won';
-    return waitScreen(won ? 'You reached the Haven!' : 'The storm caught you', `The city walked <b class="c-gold">${Math.min(v.city, v.haven)}</b> of ${v.haven} strides. ${won ? 'Well walked, chief.' : 'Try to beat it next time!'}`, me.color);
-  }
-  if (v.phase === 'watch' || v.replaying) return waitScreen('Eyes on the TV!', 'Your city is running. Watch what your buildings feed.', me.color);
-  if (v.phase === 'plan') return me.ready ? renderLocked(v) : renderPlan(v);
+  const v = view; if (!v || !v.me) return;
+  const d = v.me.dept;
+  topBar(d);
+  if (v.phase === 'over' && !v.replaying) return renderOver();
+  if (v.phase !== 'plan' || v.replaying) return renderWatch();
+  // adopt the TV's cleaned-up plan unless we've edited in the last moment
+  if (!plan || planRound !== v.round || Date.now() - lastEdit > 700) { plan = JSON.parse(JSON.stringify(v.me.plan)); planRound = v.round; }
+  if (v.me.ready) return renderLocked();
+  renderPlan();
 }
 
-// ---------------- the district grid ----------------
-const T = 100, GH = 40, TOP = 34; // tile size, ghost column width, core bar height
-function gridSvg(svg, v, district, st, opts = {}) {
-  const me = v.me, N = v.N;
-  const L = v.districts[me.left], R = v.districts[me.right];
-  const W = GH + 3 * T + GH, H = TOP + 3 * T + 4;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  let s = `<defs><pattern id="hatchP" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="#0b0d14aa"/><line x1="0" y1="0" x2="0" y2="10" stroke="#ffffff30" stroke-width="4"/></pattern></defs>`;
-  s += `<rect x="${GH}" y="0" width="${3 * T}" height="${TOP - 6}" rx="2" class="corebar"/><text x="${GH + 1.5 * T}" y="${TOP - 13}" text-anchor="middle" class="corebar-t">▲ CORE · MAIN DRIVE ▲</text>`;
-  const tileAt = (x, y, w, b, cls, k, scale) => {
-    const def = b && CARDS[b.card];
-    const glow = def ? RES_COLOR[Object.keys(def.makes)[0]] : '#fff';
-    return `<g class="tile ${cls}" data-t="${k}" style="--glow:${glow};--tint:${def ? KIND_TINT[def.kind] : '#171b26'}">
-      <rect class="tbg" x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${T - 6}" rx="4"/>
-      <rect class="thatch" x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${T - 6}" rx="4" fill="url(#hatchP)"/>
-      ${b ? `<g class="glyph" transform="translate(${x + w / 2},${y + T / 2 - 2}) scale(${scale})">${tileGlyph(b.card)}</g>` : ''}</g>`;
-  };
-  const off = new Set(v.offNow);
-  // ghost columns: neighbours' facing tiles
-  for (let r = 0; r < 3; r++) {
-    const kl = me.left * 9 + r * 3 + 2, kr = me.right * 9 + r * 3;
-    s += tileAt(0, TOP + r * T, GH, L[r * 3 + 2], 'ghost ' + stateCls(st, kl, L[r * 3 + 2], off), 'gl' + r, 0.42);
-    s += tileAt(GH + 3 * T, TOP + r * T, GH, R[r * 3], 'ghost ' + stateCls(st, kr, R[r * 3], off), 'gr' + r, 0.42);
-  }
-  for (let t = 0; t < 9; t++) {
-    const r = Math.floor(t / 3), c = t % 3, k = me.seat * 9 + t, b = district[t];
-    let cls = stateCls(st, k, b, off);
-    if (opts.target === t) cls += ' target';
-    if (opts.target2 === t) cls += ' target';
-    if (opts.pick) cls += ' pickable';
-    s += tileAt(GH + c * T, TOP + r * T, T, b, cls, t, 1.05);
-    const miss = st.starved.get(k);
-    if (miss) s += `<g transform="translate(${GH + c * T + T - 20},${TOP + r * T + 20})"><circle r="13" fill="#2a0d12" stroke="#ff5a6e" stroke-width="3"/>${resPath(Object.keys(miss)[0], 0, 0, 0.8)}</g>`;
-    if (opts.target === t || opts.target2 === t) s += `<rect x="${GH + c * T + 2}" y="${TOP + r * T + 2}" width="${T - 4}" height="${T - 4}" rx="13" class="target-ring"/>`;
-  }
-  s += `<line x1="${GH}" y1="${TOP}" x2="${GH}" y2="${H}" class="nb-line" stroke="${v.players[me.left].color}"/><line x1="${GH + 3 * T}" y1="${TOP}" x2="${GH + 3 * T}" y2="${H}" class="nb-line" stroke="${v.players[me.right].color}"/>`;
-  svg.innerHTML = s;
+function renderWatch() {
+  show('#wait');
+  const L = view.last;
+  $('#wait').innerHTML = `<div class="watch-art">${machineSvg(view.me.dept === 'loco' ? 'engine' : 'module', dc(view.me.dept))}</div>
+    <h2 class="title center">Watch the TV</h2>
+    <p class="muted center">The ${esc(W.city)} is rolling.</p>
+    ${L && L.ev && !view.replaying ? `<div class="recap">${recapLines(L.ev, 6).map(l => `<div>${l}</div>`).join('')}</div>` : ''}`;
 }
-function stateCls(st, k, b, off) {
-  if (!b) return 'empty';
-  let c = CARDS[b.card].kind;
-  c += st.active.has(k) ? ' active' : ' idle';
-  if (st.starved.has(k)) c += ' starved';
-  if (off.has(k)) c += ' off';
-  return c;
+function renderOver() {
+  show('#wait');
+  const o = view.outcome || {};
+  $('#wait').innerHTML = `<h2 class="title center">${esc(o.win ? THEME.win : (THEME.lose[o.reason] || THEME.lose.caught))}</h2>
+    <div class="score-big center"><span>${view.city}</span><small>/ ${view.haven} ${esc(W.strides)}</small></div>
+    ${view.last && view.last.ev ? `<div class="recap">${recapLines(view.last.ev, 4).map(l => `<div>${l}</div>`).join('')}</div>` : ''}
+    <p class="muted center">Play again from the TV.</p>`;
 }
-function simulate(v, districts, surge) {
-  const prod = resolveProduction(districts, { disabled: new Set(v.offNow), surge });
-  return { prod, active: new Set(prod.active), starved: new Map(prod.starved.map(s => [s.k, s.missing])) };
+function renderLocked() {
+  show('#locked');
+  const v = view, d = v.me.dept;
+  const waiting = DEPTS.filter(x => !v.depts[x].ready);
+  $('#locked').innerHTML = `<div class="grid-box small">${myGrid(false)}</div>
+    <h2 class="title center">Locked in</h2>
+    <div class="locked-summary">${summary(d).map(s => `<div>${s}</div>`).join('')}</div>
+    <p class="muted center">${waiting.length ? 'Waiting for ' + waiting.map(x => tag(x)).join(', ') : 'Everyone is ready.'}</p>
+    <button id="changeBtn" class="btn secondary wide">Change my plan</button>`;
+  $('#changeBtn').onclick = () => act({ type: 'unready' });
+}
+function summary(d) {
+  const out = [], b = plan.build;
+  if (b && b.type) out.push(`Build ${esc(mn(b.type))} at ${cellName(b.cell)}`);
+  if (b && b.upgrade != null) out.push(`Upgrade ${cellName(b.upgrade)}`);
+  if (b && b.tech) out.push(`Install ${esc(TECHS[b.tech].name)} at ${cellName(b.cell)}`);
+  if (plan.moves.length) out.push(`${plan.moves.length} move${plan.moves.length > 1 ? 's' : ''}`);
+  if (d !== 'power' && plan.asks.power) out.push(`Asking ${plan.asks.power} ${W.power} (pledged ${view.me.pledgedToMe.power - view.me.aux})`);
+  if (plan.asks.plates) out.push(`Asking ${plan.asks.plates} ${W.plates} (pledged ${view.me.pledgedToMe.plates})`);
+  if (d === 'loco' && view.projection) out.push(`Planned: <b class="c-stride">${view.projection.dist} ${W.strides}</b> vs ${W.storm} +${view.speedNow}`);
+  return out;
 }
 
 // ---------------- planning ----------------
-const SLOTS = ['play', 'left', 'right', 'keep'];
-function ensureDraft(v) {
-  const key = `${code}-${v.round}`;
-  if (!draft || draft.key !== key) {
-    let saved = null;
-    try { saved = JSON.parse(store.get('wc-draft')); } catch (e) {}
-    draft = saved && saved.key === key ? saved : { key, assign: {}, tile: null, tile2: null, commit: null, sel: null };
-  }
-  const ids = new Set(v.me.hand.map(c => c.uid));
-  for (const uid of Object.keys(draft.assign)) if (!ids.has(uid)) delete draft.assign[uid];
-  if (draft.sel && !ids.has(draft.sel)) draft.sel = null;
+function edit(fn) {
+  fn(plan);
+  lastEdit = Date.now();
+  clearTimeout(sendTimer);
+  sendTimer = setTimeout(() => act({ type: 'draft', plan }), 120);
+  renderPlan();
 }
-function saveDraft() { store.set('wc-draft', JSON.stringify(draft)); }
-const cardOf = uid => view.me.hand.find(c => c.uid === uid);
-const holder = slot => Object.keys(draft.assign).find(u => draft.assign[u] === slot || (slot === 'play' && ['build', 'scrap', 'action'].includes(draft.assign[u])));
+const startGrid = () => view.depts[view.me.dept].grid;
+const curGrid = () => gridAfterMoves(startGrid(), plan.moves);
 
-function buildPlan(v) {
-  const playUid = holder('play');
-  const plan = { play: null, left: holder('left') || null, right: holder('right') || null, reserve: holder('keep') || null, commit: draft.commit };
-  if (playUid) {
-    const mode = draft.assign[playUid];
-    plan.play = { uid: playUid, mode };
-    if (mode === 'build' || mode === 'action') { plan.play.tile = draft.tile; if (cardOf(playUid).card === 'overhaul') plan.play.tile2 = draft.tile2; }
-  }
-  return plan;
-}
-function planProblem(v, plan) {
-  const me = v.me;
-  if (!plan.play) return 'Pick a card to build (tap a card, then a tile).';
-  const card = cardOf(plan.play.uid).card;
-  if (plan.play.mode === 'build' && plan.play.tile == null) return `Tap a tile for your ${cardName(card)}.`;
-  if (plan.play.mode === 'action' && card === 'overhaul' && (plan.play.tile == null || plan.play.tile2 == null)) return 'Tap two tiles to swap.';
-  if (plan.play.mode === 'action' && card === 'surge' && plan.play.tile == null) return 'Tap one of your buildings to surge.';
-  const need = Math.min(2, me.hand.length - 1);
-  if (need >= 1 && !plan.left) return `Pass a card left to ${v.players[me.left].name}.`;
-  if (need >= 2 && !plan.right) return `Pass a card right to ${v.players[me.right].name}.`;
-  return null;
-}
-// The district as it will look after my play, for the live preview.
-function afterPlay(v, plan) {
-  const D = v.districts.map(d => d.slice());
-  const s = v.me.seat;
-  let surge = null;
-  if (plan.play && plan.play.tile != null) {
-    const card = cardOf(plan.play.uid).card;
-    if (plan.play.mode === 'build') D[s][plan.play.tile] = { card, passedBy: null };
-    else if (card === 'overhaul' && plan.play.tile2 != null) { const a = plan.play.tile, b = plan.play.tile2; [D[s][a], D[s][b]] = [D[s][b], D[s][a]]; }
-    else if (card === 'surge') surge = new Set([s * 9 + plan.play.tile]);
-  }
-  return { D, surge };
+function myGrid(tap = true) {
+  const d = view.me.dept, g = curGrid();
+  const ghost = plan.build && plan.build.type ? { cell: plan.build.cell, type: plan.build.type } : plan.build && plan.build.tech ? { cell: plan.build.cell, type: 'module' } : null;
+  const lanes = {};
+  for (const c of plan.covReq || []) lanes[c] = 'req';
+  if (d === 'shield') for (const s of view.me.strikes || []) if (s.dept === 'shield' && s.at >= 0) lanes[s.at] = 'warn';
+  const sg = startGrid(), moved = new Set(); g.forEach((m, i) => { if (m && (!sg[i] || sg[i].id !== m.id)) moved.add(i); });
+  const cells = g.map((m, i) => { const sc = (view.me.cells || [])[i] || {}; return m ? { ...sc, moved: moved.has(i) } : null; });
+  const hl = new Set();
+  if (mode && mode.kind === 'move') for (let i = 0; i < NCELLS; i++) if (i !== mode.from) hl.add(i);
+  if (mode && mode.kind === 'tech') for (let i = 0; i < NCELLS; i++) if (!g[i]) hl.add(i);
+  return gridSvg(g, dc(d), { letters: true, tap, sel, ghost, dials: plan.dials, cells, heatCap: view.me.heatCap, lanes, hl, upgrade: plan.build && plan.build.upgrade != null ? plan.build.upgrade : null });
 }
 
-function renderPlan(v) {
+function renderPlan() {
   show('#plan');
-  ensureDraft(v);
-  const me = v.me;
-  const plan = buildPlan(v);
-  const { D, surge } = afterPlay(v, plan);
-  const now = simulate(v, v.districts), next = simulate(v, D, surge);
-  const gap = v.city - v.storm;
-  const st = v.core.current;
-  const need = st ? Math.max(0, st.need - v.core.progress[me.seat]) : 0;
-  const full = me.crates.supply + me.crates.part >= v.cfg.crateCap;
-  $('#strip').innerHTML = `
-    <span class="chip-s ${gap <= 6 ? 'bad' : ''}">GAP <b>${gap}</b> <span class="muted">storm +${v.speedNow}</span></span>
-    <span class="chip-s">${st ? (need ? `DRIVE ${need}×${resIcon('part', 15)}` : 'DRIVE ✓') : 'DRIVE DONE'}</span>
-    ${v.twist.now ? `<span class="chip-s storm">${v.stormType === 'lightning' ? '⚡ NOW' : '≋ NOW'}</span>` : v.twist.next ? `<span class="chip-s storm">${v.stormType === 'lightning' ? '⚡' : '≋'} NEXT</span>` : ''}
-    ${full ? '<span class="chip-s bad">CRATES FULL</span>' : ''}`;
-  const sel = draft.sel && cardOf(draft.sel);
-  const selMode = sel && draft.assign[draft.sel];
-  const picking = sel && (selMode === 'build' || selMode === 'action');
-  gridSvg($('#grid'), v, D[me.seat], next, { target: picking ? draft.tile : (plan.play && plan.play.tile), target2: draft.tile2, pick: picking });
-  $('#grid').querySelectorAll('.tile[data-t]').forEach(g => {
-    const t = Number(g.dataset.t);
-    if (Number.isNaN(t)) return;
-    g.onclick = () => onTile(t);
-  });
-  const mine = s => s.prod.stridesBy[me.seat];
-  const dEng = mine(next) - mine(now), dCity = next.prod.strides - now.prod.strides;
-  $('#preview').innerHTML = `This round your district walks <b class="c-stride">${mine(next)}</b>${resIcon('stride', 16)}${dEng ? ` <span class="delta">(${dEng > 0 ? '+' : ''}${dEng})</span>` : ''} · whole city <b class="c-stride">${next.prod.strides + v.bonus}</b>${dCity !== dEng && dCity ? ` <span class="delta">(${dCity > 0 ? '+' : ''}${dCity})</span>` : ''}`;
-  $('#hint').innerHTML = v.me.nudge ? '<b class="c-gold">Everyone else is ready.</b> No rush, but the city is waiting on you.'
-    : v.giftOnly && v.round === 2 ? '<b class="c-accent">From now on you can only build gifts</b> (cards your neighbours passed you) and your kept card. Pass your fresh cards to whoever can use them.'
-    : v.twist.next && v.stormType === 'lightning' ? '⚡ <b>Lightning next round:</b> Power outside your top row (next to the core) will shut off, including your starting Dynamo.'
-    : leanHint(v, me.seat);
-  // hand
-  const hand = $('#hand'); hand.innerHTML = '';
-  for (const c of me.hand) {
-    const a = draft.assign[c.uid];
-    const d = document.createElement('button');
-    const fresh = CARDS[c.card].kind !== 'action' && !buildable(v, c);
-    const giver = c.from === 'left' ? v.players[me.left] : c.from === 'right' ? v.players[me.right] : null;
-    d.className = 'card ' + CARDS[c.card].kind + (draft.sel === c.uid ? ' sel' : '') + (a ? ' assigned' : '') + (fresh ? ' fresh-only' : ' can-build') + (giver ? ' gift' : '');
-    if (giver) d.style.setProperty('--g', giver.color);
-    const ribbon = giver ? `<span class="ribbon">GIFT · ${esc(giver.name)}</span>` : c.from === 'reserve' ? '<span class="ribbon kept">KEPT</span>' : fresh ? '<span class="ribbon fresh">pass or keep</span>' : '';
-    d.innerHTML = cardFace(c.card) + (a ? `<span class="tag t-${a}">${tagText(v, a)}</span>` : ribbon);
-    d.onclick = () => { draft.sel = draft.sel === c.uid ? null : c.uid; saveDraft(); renderPlan(view); };
-    hand.appendChild(d);
-  }
-  renderActions(v, sel);
-  renderCommit(v);
-  const prob = planProblem(v, plan);
-  const unassigned = me.hand.filter(c => !draft.assign[c.uid]).length;
-  $('#readyBtn').disabled = !!prob;
-  $('#readyBtn').textContent = prob ? prob : unassigned > 1 ? `Ready · ${unassigned} cards unused` : `Ready${unassigned ? ' · 1 card discarded' : ''}`;
-  $('#readyBtn').classList.toggle('hinting', !!prob);
-  $('#readyBtn').classList.toggle('warnish', !prob && unassigned > 1);
-  $('#readyBtn').classList.toggle('hidden', !!sel);
+  const v = view, d = v.me.dept;
+  $('#asks').innerHTML = asksStrip(d);
+  $('#gridBox').innerHTML = myGrid(true);
+  $('#gridBox').querySelectorAll('.tile').forEach(t => t.onclick = () => tapCell(+t.dataset.cell));
+  $('#sheet').innerHTML = sheet(d);
+  bindSheet();
+  $('#role').innerHTML = rolePanel(d);
+  bindRole(d);
+  $('#readyBtn').onclick = () => { clearTimeout(sendTimer); act({ type: 'ready', plan }); };
+  $('#autoBtn').onclick = () => { lastEdit = 0; act({ type: 'autopilot' }); };
 }
-// After round 1 you may only build cards a neighbour passed you, or the card you kept.
-function buildable(v, c) { return !v.giftOnly || v.round <= 1 || ['left', 'right', 'reserve'].includes(c.from); }
-function tagText(v, a) {
-  return { build: 'BUILD', action: 'PLAY', scrap: 'SCRAP', left: `◀ ${esc(v.players[v.me.left].name)}`, right: `${esc(v.players[v.me.right].name)} ▶`, keep: 'KEEP' }[a];
-}
-function renderActions(v, sel) {
-  const box = $('#actions');
-  if (!sel) { box.classList.add('hidden'); return; }
-  box.classList.remove('hidden');
-  const def = CARDS[sel.card];
-  const a = draft.assign[sel.uid];
-  const scrapKind = (v.cfg.scrapYield[def.tier] || 'supply') === 'part' ? 'Part' : 'Supply';
-  const btn = (mode, label, extra = '') => `<button class="act ${a === mode ? 'on' : ''}" data-m="${mode}" ${extra}>${label}</button>`;
-  box.innerHTML = `<div class="act-title"><span>${esc(def.name)}: ${def.kind === 'action' ? esc(def.text) : 'what should it do?'}</span><button class="act-close" aria-label="close">✕</button></div>
-    ${def.kind !== 'action' && !buildable(v, sel) ? '<div class="act-hint">Fresh cards can\'t be built. Pass it to a neighbour who needs it, or keep it: kept cards can be built next round.</div>' : ''}
-    <div class="act-row">
-      ${def.kind === 'action' ? btn('action', '▶ Play it') : buildable(v, sel) ? btn('build', '⬢ Build') : `<button class="act" disabled>⬢ Build<small>gifts only</small></button>`}
-      ${btn('left', `◀ To ${esc(v.players[v.me.left].name)}`)}
-      ${btn('right', `To ${esc(v.players[v.me.right].name)} ▶`)}
-      ${btn('keep', '⏸ Keep')}
-      ${btn('scrap', `✕ Scrap <small>+1 ${scrapKind}</small>`)}
-    </div>
-    ${a === 'build' ? '<div class="act-hint">Now tap a tile on your district above. Building on a tile replaces what is there.</div>' : ''}
-    ${a === 'action' && sel.card === 'overhaul' ? '<div class="act-hint">Tap two tiles to swap them.</div>' : ''}
-    ${a === 'action' && sel.card === 'surge' ? '<div class="act-hint">Tap one of your buildings: it makes double this round.</div>' : ''}`;
-  box.querySelectorAll('.act[data-m]').forEach(b => b.onclick = () => assign(sel.uid, b.dataset.m));
-  box.querySelector('.act-close').onclick = () => { draft.sel = null; saveDraft(); renderPlan(view); };
-}
-function assign(uid, mode) {
-  if (draft.assign[uid] === mode) { delete draft.assign[uid]; if (['build', 'action'].includes(mode)) { draft.tile = draft.tile2 = null; } }
-  else {
-    // one card per slot: free the slot first
-    const slot = ['build', 'scrap', 'action'].includes(mode) ? 'play' : mode;
-    const prev = holder(slot);
-    if (prev && prev !== uid) delete draft.assign[prev];
-    if (['build', 'scrap', 'action'].includes(draft.assign[uid]) || slot === 'play') { draft.tile = draft.tile2 = null; }
-    draft.assign[uid] = mode;
-    if (mode !== 'build' && mode !== 'action') {
-      // jump to the next unassigned card to keep things moving
-      draft.sel = nextSel();
+
+function tapCell(i) {
+  const g = curGrid();
+  if (mode && mode.kind === 'move') {
+    const from = mode.from; mode = null;
+    if (i !== from) {
+      edit(p => {
+        p.moves.push([from, i]);
+        const a = p.dials[from], b = p.dials[i]; delete p.dials[from]; delete p.dials[i];
+        if (a != null) p.dials[i] = a; if (b != null) p.dials[from] = b;
+        if (p.build && p.build.upgrade === from) p.build.upgrade = i; else if (p.build && p.build.upgrade === i) p.build.upgrade = from;
+      });
+      sel = i; renderPlan(); return;
     }
   }
-  saveDraft(); renderPlan(view);
-}
-// Keep the sheet moving to the next card only while the required choices (play, pass left, pass right) are open.
-function nextSel() {
-  if (holder('play') && holder('left') && (holder('right') || view.me.hand.length < 3)) return null;
-  const nxt = view.me.hand.find(c => !draft.assign[c.uid]);
-  return nxt ? nxt.uid : null;
-}
-function onTile(t) {
-  const playUid = holder('play');
-  if (!playUid) { toast('Pick a card first, then tap a tile.', 'info'); return; }
-  const mode = draft.assign[playUid];
-  const card = cardOf(playUid).card;
-  if (mode === 'build') draft.tile = t;
-  else if (mode === 'action' && card === 'overhaul') {
-    if (draft.tile == null || (draft.tile != null && draft.tile2 != null)) { draft.tile = t; draft.tile2 = null; }
-    else if (t !== draft.tile) draft.tile2 = t;
-  } else if (mode === 'action' && card === 'surge') {
-    if (!view.districts[view.me.seat][t]) return toast('Surge needs one of your buildings.', 'info');
-    draft.tile = t;
-  } else { toast('Pick a card first, then tap a tile.', 'info'); return; }
-  if (mode === 'build' || (mode === 'action' && (card !== 'overhaul' || draft.tile2 != null))) {
-    draft.sel = nextSel();
+  if (mode && mode.kind === 'tech') {
+    const t = mode.tech; mode = null;
+    if (!g[i]) { sel = i; edit(p => { p.build = { tech: t, cell: i }; }); return; }
   }
-  saveDraft(); renderPlan(view);
+  sel = sel === i ? null : i;
+  renderPlan();
 }
-function renderCommit(v) {
-  const box = $('#commitRow');
-  const st = v.core.current, me = v.me;
-  const has = me.crates.supply + me.crates.part;
-  if (!st || !has || me.commitTarget < 0) { box.classList.add('hidden'); draft.commit = null; return; }
-  const ok = k => me.crates[k] > 0 && (st.res !== 'part' || k === 'part');
-  if (draft.commit && !ok(draft.commit)) draft.commit = null;
-  box.classList.remove('hidden');
-  const target = me.commitTarget === me.seat ? 'your Drive slot' : `${esc(v.players[me.commitTarget].name)}'s Drive slot`;
-  box.innerHTML = `<span>Send a crate to ${target}?</span>
-    ${ok('supply') ? `<button class="act ${draft.commit === 'supply' ? 'on' : ''}" data-k="supply"><i class="crate s"></i> Supply</button>` : ''}
-    ${ok('part') ? `<button class="act ${draft.commit === 'part' ? 'on' : ''}" data-k="part"><i class="crate p"></i> Part</button>` : ''}
-    ${!ok('supply') && !ok('part') ? '<span class="muted">This stage needs a Part crate.</span>' : ''}`;
-  box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { draft.commit = draft.commit === b.dataset.k ? null : b.dataset.k; saveDraft(); renderPlan(view); });
-}
-$('#readyBtn').onclick = () => {
-  const plan = buildPlan(view);
-  if (planProblem(view, plan)) return;
-  send({ type: 'submit', plan });
-};
-$('#changeBtn').onclick = () => send({ type: 'unready' });
 
-function renderLocked(v) {
-  show('#locked');
-  ensureDraft(v);
-  const plan = buildPlan(v);
-  const { D, surge } = afterPlay(v, plan);
-  gridSvg($('#grid2'), v, D[v.me.seat], simulate(v, D, surge), { target: plan.play && plan.play.tile });
-  const ready = v.players.filter(p => p.ready).length;
-  const line = (label, uid) => uid ? `<div><span class="muted">${label}</span> ${esc(cardName(cardOf(uid).card))}</div>` : '';
-  const pm = plan.play && { build: 'Build', scrap: 'Scrap', action: 'Play' }[plan.play.mode];
-  $('#lockedSummary').innerHTML = line(pm || 'Play', plan.play && plan.play.uid) + line(`◀ ${esc(v.players[v.me.left].name)}`, plan.left) + line(`${esc(v.players[v.me.right].name)} ▶`, plan.right) + line('Keep', plan.reserve) + (plan.commit ? `<div><span class="muted">Drive</span> 1 ${plan.commit} crate</div>` : '');
-  $('#lockedWait').textContent = ready === v.players.length ? 'Everyone is ready!' : `Waiting for ${v.players.filter(p => !p.ready).map(p => p.name).join(', ')}…`;
+// The panel under the grid for the selected cell.
+function sheet(d) {
+  if (mode && mode.kind === 'move') return `<div class="sh"><b>Moving ${esc(mn(curGrid()[mode.from].type))}</b><span class="muted"> Tap where it should go.</span> <button class="mini" data-x="cancel">Cancel</button></div>`;
+  if (mode && mode.kind === 'tech') return `<div class="sh"><b>Install ${esc(TECHS[mode.tech].name)}</b><span class="muted"> Tap an empty cell next to a ${esc(mn('uplink'))}.</span> <button class="mini" data-x="cancel">Cancel</button></div>`;
+  if (sel == null) {
+    const free = view.me.freeMoves;
+    return `<div class="sh muted">Tap an empty cell to build, or a machine to set it. First ${free > 1 ? free + ' moves are' : 'move is'} free; more moved machines sit idle a round.${plan.moves.length ? ` <button class="mini" data-x="undo-moves">Undo moves</button>` : ''}</div>`;
+  }
+  const g = curGrid(), m = g[sel], me = view.me, left = me.left || {};
+  const b = plan.build;
+  if (!m) {
+    if (b && (b.type || b.tech) && b.cell === sel) return `<div class="sh"><b>${b.tech ? esc(TECHS[b.tech].name) : esc(mn(b.type))}</b> will be built here. <button class="mini" data-x="unbuild">Cancel</button></div>`;
+    const plates = (left.plates || 0) + (b && b.type ? me.buildable.find(x => x.type === b.type).cost : 0);
+    return `<div class="sh"><div class="sh-h">Build at ${cellName(sel)} <span class="muted">(${b ? 'replaces your current build' : 'one build or upgrade a round'})</span></div>
+      <div class="builds">${me.buildable.map(x => {
+        const can = x.cost <= plates;
+        const isNext = plan.next && plan.next.type === x.type;
+        return `<div class="bld ${can ? '' : 'poor'}"><div class="bld-ico">${machineSvg(x.type, dc(d))}</div>
+          <div class="bld-main"><b>${esc(mn(x.type))}</b> <span class="cost">${resIcon('plates', 14)}${x.cost}</span><span class="bld-t">${esc(MACHINES[x.type].text)}</span></div>
+          ${can ? `<button class="mini go" data-build="${x.type}">Build</button>` : `<button class="mini ${isNext ? 'on' : ''}" data-next="${x.type}">${isNext ? 'Asking' : 'Ask for ' + W.plates}</button>`}</div>`;
+      }).join('')}</div></div>`;
+  }
+  const def = MACHINES[m.type], c = (me.cells || [])[sel] || {};
+  const rows = [];
+  if (m.type === 'reactor' || m.type === 'turbine') {
+    const [lo, hi] = c.range || [0, 0], v = plan.dials[sel] || 0;
+    rows.push(`<div class="dial">${resIcon('power', 18)} Output <button class="step" data-dial="-1">−</button><b>${v}</b><button class="step" data-dial="1">+</button>
+      <span class="muted">${m.type === 'reactor' ? `${lo}–${hi} this round, or 0` : `max ${hi}${v > Math.floor(MACHINES.turbine.max[m.lvl - 1] / 2) ? ' · will run Hot' : ''}`}</span></div>`);
+  }
+  if (m.type === 'engine') {
+    const v = plan.dials[sel] || 0, maxT = c.maxT != null ? c.maxT : 3;
+    rows.push(`<div class="dial">Throttle ${[0, 1, 2, 3].map(t => `<button class="tbtn ${t === v ? 'on' : ''}" data-thr="${t}" ${t > maxT ? 'disabled' : ''}>T${t}</button>`).join('')}</div>
+      <div class="muted small">T${v}: ${THROTTLE.draw[v]} ${W.power}, +${THROTTLE.heat[v]} heat${v === 3 ? ', burns a gear' : ''} · ${MACHINES.engine.strides[m.lvl - 1][v]} ${W.strides} · heat ${c.startHeat || 0}/${me.heatCap}</div>`);
+  }
+  const btns = [];
+  if (b && b.upgrade === sel) btns.push(`<button class="mini on" data-x="unbuild">Cancel upgrade</button>`);
+  else if (c.upgradeCost != null) btns.push(`<button class="mini go" data-x="upgrade" ${c.upgradeCost > (left.plates || 0) + (b && b.upgrade != null ? 0 : 0) ? 'disabled' : ''}>Upgrade ${resIcon('plates', 14)}${c.upgradeCost}</button>`);
+  else if (c.lockedUpgrade) btns.push(`<button class="mini ${plan.next && plan.next.upgrade === sel ? 'on' : ''}" data-x="want-up">Need a ${esc(W.blueprint)} from ${esc(dn('research'))}</button>`);
+  if (c.upgradeCost != null && c.upgradeCost > (left.plates || 0) && !(b && b.upgrade === sel)) btns.push(`<button class="mini ${plan.next && plan.next.upgrade === sel ? 'on' : ''}" data-x="next-up">${plan.next && plan.next.upgrade === sel ? 'Asking' : 'Ask for ' + W.plates}</button>`);
+  if (m.jam) btns.push(`<button class="mini ${plan.repairs.includes(sel) ? 'on' : ''}" data-x="repair">Repair ${resIcon('plates', 14)}${CONFIG.repairCost}</button>`);
+  btns.push(`<button class="mini" data-x="move">Move</button>`);
+  return `<div class="sh"><div class="sh-h"><b>${esc(mn(m.type))}</b> ${def.levels > 1 ? `<span class="muted">level ${m.lvl}/${def.levels}</span>` : ''} <span class="muted">${cellName(sel)}</span></div>
+    <div class="muted small">${esc(m.type === 'module' && m.tech ? TECHS[m.tech].name + ': ' + TECHS[m.tech].text : def.text)}</div>${rows.join('')}<div class="btns">${btns.join('')}</div></div>`;
+}
+function bindSheet() {
+  const S = $('#sheet');
+  S.querySelectorAll('[data-x]').forEach(b => b.onclick = () => {
+    const x = b.dataset.x;
+    if (x === 'cancel') { mode = null; return renderPlan(); }
+    if (x === 'undo-moves') return edit(p => { p.moves = []; sel = null; });
+    if (x === 'unbuild') return edit(p => { p.build = null; });
+    if (x === 'upgrade') return edit(p => { p.build = { upgrade: sel }; if (p.next && p.next.upgrade === sel) p.next = null; });
+    if (x === 'want-up' || x === 'next-up') return edit(p => { p.next = p.next && p.next.upgrade === sel ? null : { upgrade: sel }; });
+    if (x === 'repair') return edit(p => { p.repairs = p.repairs.includes(sel) ? p.repairs.filter(r => r !== sel) : [...p.repairs, sel]; });
+    if (x === 'move') { mode = { kind: 'move', from: sel }; return renderPlan(); }
+  });
+  S.querySelectorAll('[data-build]').forEach(b => b.onclick = () => edit(p => { p.build = { type: b.dataset.build, cell: sel }; if (p.next && p.next.type === b.dataset.build) p.next = null; }));
+  S.querySelectorAll('[data-next]').forEach(b => b.onclick = () => edit(p => { p.next = p.next && p.next.type === b.dataset.next ? null : { type: b.dataset.next }; }));
+  S.querySelectorAll('[data-dial]').forEach(b => b.onclick = () => {
+    const c = (view.me.cells || [])[sel] || {}, [lo, hi] = c.range || [0, 0];
+    const m = curGrid()[sel];
+    let v = (plan.dials[sel] || 0) + Number(b.dataset.dial);
+    if (m.type === 'reactor') { if (v > 0 && v < lo) v = Number(b.dataset.dial) > 0 ? lo : 0; }
+    v = Math.max(0, Math.min(hi, v));
+    edit(p => { p.dials[sel] = v; });
+  });
+  S.querySelectorAll('[data-thr]').forEach(b => b.onclick = () => edit(p => { p.dials[sel] = Number(b.dataset.thr); }));
+}
+
+// What you're asking for and what's pledged to you (everyone sees this at the top).
+function asksStrip(d) {
+  const me = view.me, a = plan.asks || {}, got = me.pledgedToMe;
+  const parts = [];
+  const want = (res, ask, have, who) => `<span class="ask ${have < ask ? 'short' : 'ok'}">${resIcon(res, 16)} ${have}<small>/${ask}</small> <span class="muted">from ${esc(DEPT_INFO[who].short)}</span></span>`;
+  if (d !== 'power' && a.power) parts.push(want('power', a.power, got.power - me.aux, 'power'));
+  if (a.plates) parts.push(want('plates', a.plates, got.plates, 'fab'));
+  if (d === 'loco' && a.gears) parts.push(want('gears', a.gears, got.gears, 'fab'));
+  if (d === 'research' && a.cores) parts.push(want('cores', a.cores, got.cores, 'fab'));
+  const p = view.projection;
+  const race = p ? `<span class="race">${esc(W.City)} <b class="c-stride">+${p.dist}</b> vs ${esc(W.storm)} <b class="c-storm">+${view.speedNow}</b></span>` : '';
+  return `${race}${parts.length ? parts.join('') : '<span class="muted">You need nothing from others this round.</span>'}`;
+}
+
+// ---------------- role panels ----------------
+const stepper = (key, v, label, ask, color) => `<div class="srow" style="--c:${color || 'var(--text)'}"><span class="sname">${label}</span>
+  ${ask != null ? `<span class="sask ${v < ask ? 'short' : ''}">asks ${ask}</span>` : '<span></span>'}
+  <button class="step" data-k="${key}" data-s="-1">−</button><b class="sval">${v}</b><button class="step" data-k="${key}" data-s="1">+</button></div>`;
+
+function rolePanel(d) {
+  const me = view.me, p = view.projection;
+  if (d === 'power') {
+    const make = Object.entries(plan.dials).reduce((s, [i, v]) => s + v, 0);
+    const store = curGrid().reduce((s, m) => s + (m && m.type === 'capacitor' ? m.store || 0 : 0), 0);
+    const pledged = plan.order.reduce((s, x) => s + ((plan.outbox[x] || {}).power || 0), 0);
+    return `<div class="rp"><div class="rp-h">${resIcon('power', 20)} Making <b>${make}</b> <span class="muted">+ ${store} stored</span> · pledged <b class="${pledged > make + store ? 'c-bad' : ''}">${pledged}</b>
+</div>
+      <div class="btns"><button class="mini go" data-fill="power">Pledge what's asked</button><button class="mini go" data-x2="fit">Raise output to cover pledges</button></div>
+      <div class="muted small">Delivered in this order when short. Leftover ≥ ${CONFIG.surgeAt} after tanks trips your biggest generator.</div>
+      ${plan.order.map((x, k) => stepper('pw:' + x, (plan.outbox[x] || {}).power || 0, `${k ? `<button class="up" data-up="${x}">▲</button>` : '<span class="up"></span>'}${esc(dn(x))}${x === 'loco' && me.asksOfMe.loco.sprint ? ' <span class="sprint">sprint</span>' : ''}`, me.asksOfMe[x].power, dc(x))).join('')}</div>`;
+  }
+  if (d === 'fab') {
+    const fc = me.fabCaps || {};
+    return `<div class="rp"><div class="rp-h">Line: ${resIcon('ore', 18)}${fc.ore} → smelt ${fc.smelt} → ${resIcon('plates', 18)}<b>${p ? p.plates : fc.plates}</b>${p && p.ore ? '' : ''} · press ${fc.press} · assemble ${fc.asm}</div>
+      ${stepper('rc:gears', plan.recipe.gears, `${resIcon('gears', 16)} ${esc(W.gears)} to make <span class="muted">(2 ${W.plates} each)</span>`, me.asksOfMe.loco.gears, dc('loco'))}
+      ${stepper('rc:cores', plan.recipe.cores, `${resIcon('cores', 16)} ${esc(W.cores)} to make <span class="muted">(gear + ${W.plate || 'plate'})</span>`, me.asksOfMe.research.cores, dc('research'))}
+      <div class="rp-h">${resIcon('plates', 18)} ${esc(W.plates)} to send <button class="mini go" data-fill="plates">Match asks</button></div>
+      ${plan.order.filter(x => x !== 'fab').map(x => stepper('pl:' + x, (plan.outbox[x] || {}).plates || 0, esc(dn(x)), me.asksOfMe[x].plates, dc(x))).join('')}
+      <div class="muted small">Whatever isn't sent stays with you.</div></div>`;
+  }
+  if (d === 'loco') {
+    const fork = me.forkInfo || [];
+    return `<div class="rp"><div class="rp-h">${esc(W.route)} this round</div>
+      <div class="routes">${fork.map((f, k) => `<button class="route ${plan.route === k ? 'on' : ''}" data-route="${k}"><b>${esc(TERRAIN[f.id].name)}</b><span>${esc(TERRAIN[f.id].text)}</span></button>`).join('')}</div>
+      <label class="tog"><input type="checkbox" id="sprint" ${plan.sprint ? 'checked' : ''}> Tell ${esc(dn('power'))} to ramp up for next round</label>
+      ${p ? `<div class="rp-h">Planned: <b class="c-stride">${p.strides} × ${p.grade} = ${p.dist} ${esc(W.strides)}</b></div>` : ''}
+      ${covReqRow()}</div>`;
+  }
+  if (d === 'shield') return shieldPanel();
+  if (d === 'research') return researchPanel();
+  return '';
+}
+function covReqRow() {
+  return `<div class="rp-h small">Ask ${esc(dn('shield'))} to ${esc(W.cover)}: ${[...COLS].map((_, c) => `<button class="tbtn ${plan.covReq.includes(c) ? 'on' : ''}" data-req="${c}">${COLS[c]}</button>`).join('')}</div>`;
+}
+
+function shieldPanel() {
+  const me = view.me, cap = me.capacity || { projectors: [], armory: 0, oc: 0 };
+  const strikes = me.strikes || [];
+  const used = {}; for (const c of plan.covers) used[c.src] = (used[c.src] || 0) + 1;
+  const srcFor = (x, col) => {
+    const opts = [];
+    for (const pj of cap.projectors) if (pj.cols.includes(col) && (used[pj.cell] || 0) < pj.covers && !plan.covers.some(c => c.src === pj.cell && c.dept === x)) opts.push(pj.cell);
+    if ((used.oc || 0) < cap.oc) opts.push('oc');
+    if ((used.armory || 0) < cap.armory && (me.left.plates || 0) >= 2) opts.push('armory');
+    return opts;
+  };
+  const rows = DEPTS.map(x => {
+    const lanes = me.lanes[x];
+    return `<div class="sm-row"><span class="sm-name" style="color:${dc(x)}">${esc(DEPT_INFO[x].short)}</span>${[...COLS].map((_, c) => {
+      const st = strikes.find(s => s.dept === x && s.at === c);
+      const nx = (me.strikesNext || []).some(s => s.dept === x && s.col === c);
+      const cov = plan.covers.find(k => k.dept === x && k.col === c);
+      const req = (me.covReqs[x] || []).includes(c);
+      const n = lanes[c].filter(Boolean).length;
+      const can = st && !cov && srcFor(x, c).length;
+      return `<button class="sm-cell ${st ? 'strike' : ''} ${cov ? 'cov' : ''} ${req ? 'req' : ''} ${nx ? 'next' : ''}" data-cov="${x}:${c}" ${st || cov ? '' : 'disabled'}>
+        <span class="sm-n">${n ? n : ''}</span>${st ? `<span class="sm-b">${cov ? '✓' : can ? '⚡' : '⚡'}</span>` : ''}</button>`;
+    }).join('')}</div>`;
+  }).join('');
+  const projLeft = cap.projectors.reduce((s, pj) => s + pj.covers - (used[pj.cell] || 0), 0);
+  return `<div class="rp"><div class="rp-h">${esc(W.Lightning)} map: <b>${strikes.length}</b> this round <span class="muted">(numbers = machines in that column)</span></div>
+    <div class="sm"><div class="sm-row"><span class="sm-name"></span>${[...COLS].map((_, c) => `<span class="sm-col">${COLS[c]}</span>`).join('')}</div>${rows}</div>
+    <div class="muted small">Tap a struck column to ${esc(W.cover)} it. ${esc(mn('projector'))}s left: ${projLeft}${cap.armory ? ` · ${esc(mn('armory'))}: ${cap.armory - (used.armory || 0)} (2 ${W.plates} each)` : ''}${cap.oc ? ` · boost: ${cap.oc - (used.oc || 0)}` : ''}. Gold = someone asked. ${me.strikesNext ? 'Dotted = next round.' : ''}</div></div>`;
+}
+
+function researchPanel() {
+  const me = view.me, left = me.left || {};
+  const ins = left.insight != null ? left.insight : me.hold.insight;
+  const nf = me.nextFork;
+  const bp = DEPTS.map(x => {
+    const u = me.unlocks[x];
+    const on = plan.unlock === x;
+    return `<button class="bp ${on ? 'on' : ''} ${u.wants ? 'wants' : ''}" data-unlock="${x}" ${u.cost == null || (!on && u.cost > ins) ? 'disabled' : ''} style="--c:${dc(x)}">
+      <b>${esc(DEPT_INFO[x].short)}</b><span>LV ${u.level}${u.cost != null ? ` → ${u.level + 1}` : ' max'}</span>${u.cost != null ? `<span>${resIcon('insight', 12)}${u.cost}</span>` : ''}${u.wants ? '<i>asked</i>' : ''}</button>`;
+  }).join('');
+  const shelf = (me.shelf || []).map(t => {
+    const on = plan.build && plan.build.tech === t.id;
+    return `<div class="tech-c ${on ? 'on' : ''}"><b>${esc(TECHS[t.id].name)}</b> <span class="cost">${resIcon('insight', 12)}${t.cost}</span><span class="muted small">${esc(TECHS[t.id].text)}</span>
+      <button class="mini ${on ? 'on' : 'go'}" data-tech="${t.id}" ${!on && t.cost > ins ? 'disabled' : ''}>${on ? 'Cancel' : 'Install'}</button></div>`;
+  }).join('');
+  const oc = ['power', 'fab', 'loco', 'shield'].map(x => `<button class="tbtn ${plan.overclock.includes(x) ? 'on' : ''}" data-oc="${x}" title="${esc(OVERCLOCK[x].text)}" style="--c:${dc(x)}">${esc(DEPT_INFO[x].short)}</button>`).join('');
+  return `<div class="rp">
+    ${nf ? `<div class="rp-h">Next round's ${esc(W.route)}: ${nf.map(t => `<b>${esc(TERRAIN[t].name)}</b>`).join(' or ')} <span class="muted">(only you see this)</span></div>` : ''}
+    <div class="rp-h">${esc(W.blueprint)}s <span class="muted">(one a round, unlocks the next level for a car)</span></div><div class="bps">${bp}</div>
+    <div class="rp-h">Boost <span class="muted">(${OVERCLOCK.cost} ${esc(W.insight)} each, up to ${me.ocCap})</span> ${oc}</div>
+    <div class="muted small">${['power', 'fab', 'loco', 'shield'].map(x => `${esc(DEPT_INFO[x].short)}: ${esc(OVERCLOCK[x].text)}`).join(' · ')}</div>
+    ${shelf ? `<div class="rp-h">Upgrades on offer <span class="muted">(install on an empty cell next to a ${esc(mn('uplink'))})</span></div>${shelf}` : ''}
+    ${covReqRow()}</div>`;
+}
+
+function bindRole(d) {
+  const R = $('#role');
+  R.querySelectorAll('.step[data-k]').forEach(b => b.onclick = () => {
+    const [kind, x] = b.dataset.k.split(':'), s = Number(b.dataset.s);
+    edit(p => {
+      if (kind === 'pw') { p.outbox[x] = { power: Math.max(0, ((p.outbox[x] || {}).power || 0) + s) }; }
+      if (kind === 'pl') { p.outbox[x] = { plates: Math.max(0, ((p.outbox[x] || {}).plates || 0) + s) }; }
+      if (kind === 'rc') p.recipe[x] = Math.max(0, (p.recipe[x] || 0) + s);
+    });
+  });
+  R.querySelectorAll('[data-up]').forEach(b => b.onclick = () => edit(p => { const i = p.order.indexOf(b.dataset.up); if (i > 0) { p.order.splice(i, 1); p.order.splice(i - 1, 0, b.dataset.up); } }));
+  R.querySelectorAll('[data-fill]').forEach(b => b.onclick = () => edit(p => {
+    const res = b.dataset.fill;
+    for (const x of p.order) if (x !== 'fab' || res === 'power') p.outbox[x] = { [res]: (view.me.asksOfMe[x] || {})[res] || 0 };
+    if (res === 'plates') { p.recipe.gears = view.me.asksOfMe.loco.gears || 0; p.recipe.cores = view.me.asksOfMe.research.cores || 0; }
+  }));
+  R.querySelectorAll('[data-x2="fit"]').forEach(b => b.onclick = () => edit(p => {
+    const g = curGrid(), cells = view.me.cells || [];
+    const store = g.reduce((s, m) => s + (m && m.type === 'capacitor' ? m.store || 0 : 0), 0);
+    const want = p.order.reduce((s, x) => s + ((p.outbox[x] || {}).power || 0), 0) - store;
+    let have = Object.values(p.dials).reduce((s, v) => s + v, 0);
+    for (const type of ['reactor', 'turbine']) g.forEach((m, i) => {
+      if (!m || m.type !== type || have >= want) return;
+      const hi = ((cells[i] || {}).range || [0, 0])[1], cur = p.dials[i] || 0;
+      let nv = Math.min(hi, cur + (want - have));
+      if (type === 'reactor' && nv > 0) nv = Math.max(nv, ((cells[i] || {}).range || [0])[0]);
+      have += nv - cur; p.dials[i] = nv;
+    });
+    if (have < want) toast(`Your machines can make ${have} this round (plus ${store} stored). Lower a pledge or build more.`);
+  }));
+  R.querySelectorAll('[data-route]').forEach(b => b.onclick = () => edit(p => { p.route = Number(b.dataset.route); }));
+  const sp = R.querySelector('#sprint'); if (sp) sp.onchange = () => edit(p => { p.sprint = sp.checked; });
+  R.querySelectorAll('[data-req]').forEach(b => b.onclick = () => edit(p => { const c = Number(b.dataset.req); p.covReq = p.covReq.includes(c) ? p.covReq.filter(x => x !== c) : [...p.covReq, c]; }));
+  R.querySelectorAll('[data-unlock]').forEach(b => b.onclick = () => edit(p => { p.unlock = p.unlock === b.dataset.unlock ? null : b.dataset.unlock; }));
+  R.querySelectorAll('[data-oc]').forEach(b => b.onclick = () => edit(p => { const x = b.dataset.oc; p.overclock = p.overclock.includes(x) ? p.overclock.filter(o => o !== x) : [...p.overclock, x]; }));
+  R.querySelectorAll('[data-tech]').forEach(b => b.onclick = () => {
+    const t = b.dataset.tech;
+    if (plan.build && plan.build.tech === t) return edit(p => { p.build = null; });
+    mode = { kind: 'tech', tech: t }; sel = null; renderPlan(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  R.querySelectorAll('[data-cov]').forEach(b => b.onclick = () => {
+    const [x, cs] = b.dataset.cov.split(':'), col = Number(cs);
+    edit(p => {
+      const k = p.covers.findIndex(c => c.dept === x && c.col === col);
+      if (k >= 0) { p.covers.splice(k, 1); return; }
+      const cap = view.me.capacity || { projectors: [], armory: 0, oc: 0 };
+      const used = {}; for (const c of p.covers) used[c.src] = (used[c.src] || 0) + 1;
+      const pj = cap.projectors.find(q => q.cols.includes(col) && (used[q.cell] || 0) < q.covers && !p.covers.some(c => c.src === q.cell && c.dept === x));
+      if (pj) return p.covers.push({ dept: x, col, src: pj.cell });
+      if ((used.oc || 0) < cap.oc) return p.covers.push({ dept: x, col, src: 'oc' });
+      if ((used.armory || 0) < cap.armory) return p.covers.push({ dept: x, col, src: 'armory' });
+      toast(`Nothing can ${W.cover} column ${COLS[col]} right now. A ${mn('projector')} covers its own column.`);
+    });
+  });
 }
 
 // ---------------- toast ----------------
-let toastT;
-function toast(msg, kind = 'bad') {
-  const t = $('#toast'); t.textContent = msg; t.className = 'toast ' + kind;
-  clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hidden'), 2600);
+let toastTimer;
+function toast(text) {
+  const t = $('#toast'); t.textContent = text; t.classList.remove('hidden');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 3200);
 }

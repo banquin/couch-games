@@ -1,65 +1,94 @@
-// Rules tests. Run: node walking-city/test/engine.test.js
+// Rules tests (v0.3). Run: node walking-city/test/engine.test.js
 import assert from 'assert';
-import { CONFIG } from '../js/config.js';
-import { neighbors, resolveProduction } from '../js/engine/production.js';
-import { createGame, applyAction, validatePlan } from '../js/engine/engine.js';
-import { botPlan } from '../js/engine/bot.js';
-import { makeRng } from '../js/engine/rng.js';
+import { CONFIG, DEPTS, MACHINES } from '../js/config.js';
+import * as E from '../js/engine/engine.js';
+import { planBots } from '../js/engine/bots.js';
+import { publicView, privateView } from '../js/engine/views.js';
 
 let n = 0;
 const t = (name, fn) => { fn(); n++; console.log('ok -', name); };
-const empty = N => Array.from({ length: N }, () => Array(9).fill(null));
-const b = card => ({ card, passedBy: null });
+const game = (seed = 7, mode = 'standard') => E.createGame({ seed, mode });
 
-t('neighbours wrap around the ring, same row only', () => {
-  assert.deepStrictEqual(neighbors(4, 0, 5).map(String).sort(), ['0,2', '0,4', '0,8', '1,3'].sort());
-  assert.deepStrictEqual(neighbors(4, 0, 3).map(String).sort(), ['0,0', '0,4', '0,6', '3,5'].sort());
+t('a new game has five departments with their starting machines', () => {
+  const g = game();
+  assert.deepStrictEqual(Object.keys(g.depts), DEPTS);
+  for (const d of DEPTS) assert.strictEqual(g.depts[d].grid.filter(Boolean).length, CONFIG.starts[d].length);
+  assert.strictEqual(g.phase, 'plan');
 });
 
-t('output feeds every neighbour in full, across borders', () => {
-  const D = empty(3);
-  D[0][5] = b('dynamo'); D[1][3] = b('piston'); D[1][0] = b('fuelwell'); D[0][4] = b('workshop'); D[0][1] = b('orepit');
-  const p = resolveProduction(D);
-  assert.strictEqual(p.strides, 1, 'piston across the border runs');
-  assert.ok(p.active.includes(4), 'workshop gets the same power');
-  assert.strictEqual(p.docks[0].part, 0, 'workshop in row 1 does not dock');
+t('moves swap cells; only moves beyond the free ones idle', () => {
+  const g = game();
+  const grid = g.depts.fab.grid;
+  const mv = E.movedMachines(g, grid, [[7, 0], [8, 1]]);
+  assert.strictEqual(mv.moved.length, 2);
+  assert.strictEqual(mv.idle.size, 2 - E.freeMoves(g));
+  assert.strictEqual(mv.grid[0].type, 'drill');
 });
 
-t('starved buildings report what is missing', () => {
-  const D = empty(3); D[0][4] = b('piston'); D[0][3] = b('dynamo');
-  const p = resolveProduction(D);
-  assert.deepStrictEqual(p.starved[0].missing, { fuel: 1 });
+t('normalizePlan drops a build the department cannot afford', () => {
+  const g = game();
+  g.depts.loco.hold.plates = 1;
+  const { plan, errors } = E.normalizePlan(g, 'loco', { build: { type: 'engine', cell: 0 } });
+  assert.strictEqual(plan.build, null);
+  assert.ok(errors.length);
 });
 
-t('emergency feed uses Supply for basics but never Part crates', () => {
-  const D = empty(3); D[0][4] = b('piston'); D[0][3] = b('dynamo');
-  assert.strictEqual(resolveProduction(D, { crates: [{ supply: 0, part: 2 }, { supply: 0, part: 0 }, { supply: 0, part: 0 }] }).strides, 0);
-  assert.strictEqual(resolveProduction(D, { crates: [{ supply: 1, part: 0 }, { supply: 0, part: 0 }, { supply: 0, part: 0 }] }).strides, 1);
+t('asks are derived from the plan (power = draw − aux)', () => {
+  const g = game();
+  const { plan } = E.normalizePlan(g, 'loco', { dials: { 8: 3, 10: 3 } });
+  assert.strictEqual(plan.asks.power, 6 - CONFIG.auxPower);
 });
 
-t('after round 1 only gifts or the kept card can be built', () => {
-  const g = createGame({ players: [1, 2, 3].map(i => ({ id: 'b' + i, name: 'B' + i })), seed: 3 });
-  g.round = 2;
-  const p = g.players[0];
-  p.hand = [{ uid: 'a', card: 'orepit', from: 'deck' }, { uid: 'b', card: 'piston', from: 'left', passedBy: 2 }, { uid: 'c', card: 'dynamo', from: 'deck' }];
-  assert.match(validatePlan(g, 0, { play: { uid: 'a', mode: 'build', tile: 0 }, left: 'b', right: 'c' }), /only build/);
-  assert.strictEqual(validatePlan(g, 0, { play: { uid: 'b', mode: 'build', tile: 0 }, left: 'a', right: 'c' }), null);
-  assert.strictEqual(validatePlan(g, 0, { play: { uid: 'a', mode: 'scrap' }, left: 'b', right: 'c' }), null);
+t('engine throttle is capped by heat', () => {
+  const g = game();
+  const e = g.depts.loco.grid[8];
+  e.heat = 4;
+  assert.ok(E.maxThrottle(g, g.depts.loco.grid, 8, false) < 3);
 });
 
-t('bot games finish at 3, 4 and 5 players with both storms', () => {
-  for (const storm of ['lightning', 'sandstorm']) for (const N of [3, 4, 5]) {
-    const g = createGame({ players: Array.from({ length: N }, (_, i) => ({ id: 'b' + i, name: 'B' + i })), seed: 42 + N, storm });
-    const rng = makeRng(N);
-    let guard = 0;
-    while (g.phase !== 'over' && guard++ < 50) {
-      if (g.phase === 'plan') for (const p of g.players) { const r = applyAction(g, botPlan(g, p.id, { rng })); assert.ok(r.ok, r.error); }
-      else applyAction(g, { type: 'continue' });
+t('strikes on an empty column arc to the nearest occupied one', () => {
+  const grid = Array(E.CELLS).fill(null);
+  grid[2] = { type: 'drill' };
+  assert.strictEqual(E.strikeTarget(grid, 0), 2);
+  assert.strictEqual(E.strikeTarget(Array(E.CELLS).fill(null), 1), -1);
+});
+
+t('projection never changes the real state', () => {
+  const g = game();
+  planBots(g);
+  const before = JSON.stringify(g);
+  E.project(g);
+  assert.strictEqual(JSON.stringify(g), before);
+});
+
+t('views hide the secrets: strikes only for Shield, next fork only for Research', () => {
+  const g = game();
+  const pub = publicView(g);
+  assert.ok(!pub.strikeLanes);
+  assert.ok(privateView(g, 'shield').me.strikes);
+  assert.ok(!privateView(g, 'loco').me.strikes);
+  assert.ok('nextFork' in privateView(g, 'research').me);
+  assert.ok(!('nextFork' in privateView(g, 'power').me));
+});
+
+t('an all-bot game runs to an outcome, and same seed gives the same game', () => {
+  const run = seed => {
+    const g = game(seed);
+    for (let k = 0; k < 20 && g.phase !== 'over'; k++) {
+      planBots(g);
+      for (const d of DEPTS) g.depts[d].ready = true;
+      E.resolveRound(g);
+      assert.ok(g.city >= 0 && Number.isFinite(g.storm));
+      if (g.phase === 'watch') E.nextRound(g);
     }
     assert.strictEqual(g.phase, 'over');
-    assert.ok(['won', 'caught', 'timeout'].includes(g.outcome));
-    assert.ok(g.round <= CONFIG.maxRounds);
-  }
+    return [g.city, g.storm, g.outcome.win];
+  };
+  assert.deepStrictEqual(run(11), run(11));
+});
+
+t('every machine has a name and a text from the theme', () => {
+  for (const [k, m] of Object.entries(MACHINES)) assert.ok(m.name && m.text, k);
 });
 
 console.log(`\n${n} tests passed`);

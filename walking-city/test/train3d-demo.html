@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- Stand-alone check of the 3D train (js/ui/train3d.js) with a sample mid-game state and the TV HUD areas blocked out.
+     Serve the repo (node server.js) and open /walking-city/test/train3d-demo.html
+     ?focus=fab  glide to a car   ?fx=1  play a frost strike, pops and a transfer   ?hud=0  hide the HUD blocks -->
+<html><head><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#0b1424}#stage{position:absolute;inset:0}
+.hud{position:absolute;background:#0a1220d8;border:1px solid #fff2;z-index:2}
+.lbl{position:absolute;left:0;top:0;margin-top:-34px;translate:-50% 0;z-index:1;font:700 18px Inter,sans-serif;color:#fff;background:#0a1220d0;padding:2px 10px;white-space:nowrap}</style>
+</head><body>
+<div id="stage"></div>
+<div id="labels"></div>
+<script type="module">
+import { createGame, newMachine } from '../js/engine/engine.js';
+import { publicView } from '../js/engine/views.js';
+import { createTrain } from '../js/ui/train3d.js';
+const q = new URLSearchParams(location.search);
+if (q.get('hud') !== '0') document.body.insertAdjacentHTML('beforeend', '<div class="hud" style="right:18px;top:96px;bottom:40px;width:440px"></div><div class="hud" style="top:18px;left:50%;translate:-50% 0;width:min(760px,50vw);height:64px"></div>');
+const g = createGame({ seed: 11, mode: 'standard' });
+const put = (d, cell, type, extra = {}) => { g.depts[d].grid[cell] = newMachine(g, type, extra); };
+put('loco', 7, 'radiator', { lvl: 2 }); put('loco', 9, 'engine', { idle: true, heat: 3 }); put('loco', 14, 'gearbox');
+put('power', 4, 'turbine', { hot: true, set: 5 }); put('power', 8, 'capacitor', { lvl: 2 }); put('power', 13, 'cooler');
+put('fab', 0, 'drill', { lvl: 2 }); put('fab', 1, 'smelter'); put('fab', 3, 'press', { jam: 1 }); put('fab', 8, 'assembler'); put('fab', 12, 'drill');
+put('shield', 2, 'projector', { lvl: 2 }); put('shield', 10, 'armory'); put('shield', 15, 'radar', { tripped: true });
+put('research', 0, 'lab', { lvl: 3 }); put('research', 7, 'uplink'); put('research', 8, 'module', { tech: 'prefab' }); put('research', 13, 'analyzer');
+const v = publicView(g);
+v.depts.fab.building = { type: 'smelter', cell: 13 };
+v.depts.power.building = { upgrade: 8 };
+const ORDER = ['loco', 'power', 'fab', 'shield', 'research'];
+const train = await createTrain(document.getElementById('stage'), { cols: 6, rows: 3, order: ORDER, overviewDir: q.get('dir') ? q.get('dir').split(',').map(Number) : undefined });
+window.train = train;
+train.update(v); train.setRace({ city: 40, storm: 22 });
+await train.ready;
+const lab = document.getElementById('labels');
+lab.innerHTML = ORDER.map(d => `<div class="lbl" data-car="${d}">${d}</div>`).join('');
+const pin = () => { for (const d of ORDER) { const r = train.carScreenRect(d), el = lab.querySelector(`[data-car="${d}"]`); if (r) el.style.transform = `translate(${r.x + r.w / 2}px,${r.y}px)`; } requestAnimationFrame(pin); };
+pin();
+if (q.get('focus')) setTimeout(() => train.focus(q.get('focus')), 200);
+if (q.get('fx')) setTimeout(() => {
+  train.lane('fab', 3, 'hit'); train.lane('power', 2, 'cov'); train.lane('research', 5, 'miss');
+  train.pop('fab', 3, 'Jammed!', 'bad'); train.pop('loco', null, '+7 miles', 'gold'); train.transfer('fab', 'loco', 'gears', 3);
+}, 1600);
+setTimeout(() => { window.__done = true; }, q.get('fx') ? 2300 : q.get('focus') ? 9000 : 2600);
+</script></body></html>
