@@ -5,7 +5,7 @@ import * as E from '../engine/engine.js';
 import { planBots } from '../engine/bots.js';
 import { publicView, privateView } from '../engine/views.js';
 import { hostRoom, pickTransport } from '../../../shared/net.js';
-import { deptPanel, drawTrack, laneFlash, cellFx } from './board.js';
+import { makeScene, ORDER } from './scene.js';
 import { resIcon, deptBadge } from './icons.js';
 import { recapLines, esc, dn, dc, tag, W, terrainLine, COLS } from './text.js';
 
@@ -14,8 +14,9 @@ const SAVE_KEY = 'wc3-host';
 const BEST_KEY = 'wc3-best';
 const SPEED = Number(new URLSearchParams(location.search).get('speed')) || 1;
 
+const sceneReady = makeScene().then(s => { scene = s; if (S.game) render(); return s; });
 let S = load() || { code: newCode(), players: [], seats: {}, game: null, animatedRound: 0, mode: 'first' };
-let net = null, paused = false, animating = false, stood = false, viewSeq = 0;
+let net = null, paused = false, animating = false, stood = false, viewSeq = 0, scene = null;
 
 function newCode() { const A = 'BCDFGHJKLMNPQRSTVWXZ'; return Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join(''); }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ ...S, t: Date.now() })); } catch (e) {} }
@@ -255,11 +256,30 @@ function render() {
   if (g.phase === 'over' && !animating && S.animatedRound === g.round) return renderOver();
   show('#game');
   const v = publicView(g, { projection: g.phase === 'plan' });
-  for (const d of DEPTS) $('#p-' + d).innerHTML = deptPanel(v, d, { ev: animating ? shownEv : null, onSeat: d });
+  // before a round's replay starts, keep showing where the train was
+  const track = animating && shownEv ? shownEv.track : (g.phase !== 'plan' && g.last && S.animatedRound !== g.last.round ? g.last.before : null);
+  if (scene) scene.draw(v, { shownEv: animating ? shownEv : null, track });
+  if (scene && scene.kind === '3d') { renderLabels(v); renderRaceBar(v, track); }
   bindSeatButtons();
   renderCenter(v);
-  drawTrack($('#track'), v, animating && shownEv ? shownEv.track : null);
   $('#footLine').innerHTML = footLine(v);
+}
+// 3D mode: HTML labels pinned above each car, and a race bar across the top.
+function renderLabels(v) {
+  $('#carLabels').innerHTML = ORDER.map((d, i) => {
+    const x = v.depts[d];
+    return `<div class="car-label" data-car="${d}" style="--c:${dc(d)}"><span class="cl-n">${i + 1}</span><span class="cl-name">${esc(dn(d))}</span>
+      <span class="cl-who">${x.seat ? esc(x.seat.name) + (x.auto ? ' (auto)' : '') : 'bot'}</span>
+      ${v.phase === 'plan' ? `<span class="cl-lamp ${x.ready ? 'on' : ''}">${x.ready ? 'READY' : '…'}</span>` : ''}
+      ${x.seat ? `<button class="cl-auto ${x.auto ? 'on' : ''}" data-auto="${d}">${x.auto ? 'Give back' : 'Autopilot'}</button>` : ''}</div>`;
+  }).join('');
+}
+function renderRaceBar(v, track) {
+  const city = track ? track.city : v.city, storm = track ? track.storm : v.storm;
+  const lo = Math.min(v.stormStart, 0), hi = v.haven, pct = p => Math.max(0, Math.min(100, ((p - lo) / (hi - lo)) * 100));
+  $('#raceBar').innerHTML = `<div class="rb-top"><span class="rb-freeze">${esc(W.Storm.toUpperCase())} · ${Math.max(0, city - storm)} ${esc(W.strides.toUpperCase())} BEHIND</span>
+    <span class="rb-goal">${esc(W.haven.toUpperCase())} · ${Math.max(0, hi - city)} ${esc(W.strides.toUpperCase())}</span></div>
+    <div class="rb-track"><i class="rb-storm" style="width:${pct(storm)}%"></i><b class="rb-train" style="left:${pct(city)}%"></b></div>`;
 }
 function bindSeatButtons() {
   document.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => {
@@ -338,6 +358,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function wait(ms) { await sleep(ms * SPEED); while (paused) await sleep(200); }
 
 async function animateRound() {
+  if (!scene) await sceneReady;
   const g = S.game; const L = g.last; if (!L) return;
   animating = true;
   const ev = L.ev;
@@ -348,28 +369,31 @@ async function animateRound() {
   banner(`<span class="title">Round ${round}</span>The ${esc(W.city)} rolls`, 1200);
   await wait(1300);
   // 1 strike
-  for (const s of ev.strikes) laneFlash(s.dept, s.at < 0 ? s.col : s.at, s.covered ? 'cov' : s.hit.length ? 'hit' : 'miss');
+  scene.focus(null);
+  for (const s of ev.strikes) scene.lane(s.dept, s.at < 0 ? s.col : s.at, s.covered ? 'cov' : s.hit.length ? 'hit' : 'miss');
   await wait(ev.strikes.length ? 1800 : 600);
   // 2 power
-  shownEv.beat = 1; render();
-  cellFx('power', null, `+${ev.power.gen}`, 'gold');
-  for (const d of ['fab', 'loco', 'shield', 'research']) cellFx(d, null, `${resIconText('power')} ${ev.power.delivered[d] || 0}`, (ev.broken.some(b => b.to === d && b.res === 'power')) ? 'bad' : '');
+  shownEv.beat = 1; render(); scene.focus('power');
+  scene.pop('power', null, `+${ev.power.gen}`, 'gold');
+  for (const d of ['fab', 'loco', 'shield', 'research']) scene.transfer('power', d, 'power', ev.power.delivered[d] || 0);
+  for (const d of ['fab', 'loco', 'shield', 'research']) scene.pop(d, null, `${resIconText('power')} ${ev.power.delivered[d] || 0}`, (ev.broken.some(b => b.to === d && b.res === 'power')) ? 'bad' : '');
   await wait(1500);
   // 3 fab
-  shownEv.beat = 2; render();
-  cellFx('fab', null, `+${ev.fab.plates} ${W.plates}`, 'gold');
-  for (const [d, n] of Object.entries(ev.fab.shipped || {})) if (n) cellFx(d, null, `+${n} ${W.plates}`, '');
+  shownEv.beat = 2; render(); scene.focus('fab');
+  scene.pop('fab', null, `+${ev.fab.plates} ${W.plates}`, 'gold');
+  for (const [d, n] of Object.entries(ev.fab.shipped || {})) if (n) { scene.transfer('fab', d, 'plates', n); scene.pop(d, null, `+${n} ${W.plates}`, ''); }
   await wait(1400);
   // 4 shield & research
-  shownEv.beat = 3; render();
-  if (ev.research.insight) cellFx('research', null, `+${ev.research.insight} ${W.insight}`, 'gold');
+  shownEv.beat = 3; render(); scene.focus(ev.research.insight ? 'research' : 'shield');
+  if (ev.research.insight) scene.pop('research', null, `+${ev.research.insight} ${W.insight}`, 'gold');
   await wait(1100);
   // 5 loco
-  shownEv.beat = 4; render();
-  cellFx('loco', null, `+${ev.loco.dist} ${W.strides}`, 'good');
+  shownEv.beat = 4; render(); scene.focus('loco');
+  scene.pop('loco', null, `+${ev.loco.dist} ${W.strides}`, 'good');
   shownEv.track = { city: L.after.city, storm: L.before.storm }; render();
   await wait(1500);
   // 6 storm
+  scene.focus(null);
   shownEv.beat = 5; shownEv.track = { city: L.after.city, storm: L.after.storm }; render();
   await wait(1300);
   // recap

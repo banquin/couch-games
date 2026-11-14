@@ -1,24 +1,24 @@
 // Everything a player reads that names the world lives here, so the game can be re-themed
 // (new story, same mechanics) by editing only this file. config.js merges these over its rules.
-// Theme: Last Train Out (Brendan’s pick, 2026-11-14). The previous Walking City words are in git history.
+// Theme: Last Train Out, Snowpiercer look: a train flees the Freeze through a frozen dead city (Brendan’s pick, 2026-11-14). The previous Walking City words are in git history.
 export const THEME = {
   "title": [
     "Last Train",
     "Out"
   ],
-  "tagline": "Five cars. One train. Outrun the wildfire to the last station.",
+  "tagline": "Five cars. One train. Outrun the Freeze to the last station.",
   "words": {
     "city": "train",
     "City": "Train",
-    "storm": "wildfire",
-    "Storm": "Wildfire",
+    "storm": "Freeze",
+    "Storm": "Freeze",
     "haven": "Last Station",
     "strides": "miles",
     "stride": "mile",
-    "lightning": "embers",
-    "Lightning": "Embers",
-    "strike": "ember",
-    "strikes": "embers",
+    "lightning": "frost",
+    "Lightning": "Frost",
+    "strike": "frost strike",
+    "strikes": "frost strikes",
     "plates": "plates",
     "gears": "gears",
     "cores": "cores",
@@ -26,8 +26,8 @@ export const THEME = {
     "power": "steam",
     "ore": "ore",
     "route": "Line",
-    "cover": "douse",
-    "covers": "douses",
+    "cover": "shield",
+    "covers": "shields",
     "blueprint": "blueprint"
   },
   "depts": {
@@ -49,7 +49,7 @@ export const THEME = {
     "shield": {
       "name": "Armour",
       "short": "ARM",
-      "blurb": "Only you see where the embers will land. Decide what survives."
+      "blurb": "Only you see where the frost will strike. Decide what keeps running."
     },
     "research": {
       "name": "Map Room",
@@ -103,16 +103,16 @@ export const THEME = {
       "text": "Adjacent Pistons +1 mile at T2, +2 at T3."
     },
     "projector": {
-      "name": "Water Cannon",
-      "text": "A Water Cannon in your column X douses column X of other cars. Refills if steamed."
+      "name": "Heat Lamp",
+      "text": "A Heat Lamp in your column X shields column X of other cars from frost. Recharges if steamed."
     },
     "armory": {
-      "name": "Sand Bin",
-      "text": "Turns 2 plates into a one-use douse for any column."
+      "name": "Salt Bin",
+      "text": "Turns 2 plates into a one-use shield for any column."
     },
     "radar": {
       "name": "Lookout",
-      "text": "You also see next round’s ember columns."
+      "text": "You also see next round’s frost columns."
     },
     "lab": {
       "name": "Chart Desk",
@@ -157,12 +157,12 @@ export const THEME = {
       "text": "T3 burns no gear."
     },
     "widebeam": {
-      "name": "Wide Nozzles",
-      "text": "Every Water Cannon douses +1 more."
+      "name": "Wide Lamps",
+      "text": "Every Heat Lamp shields +1 more."
     },
     "stormchart": {
-      "name": "Fire Map",
-      "text": "Everyone sees this round’s ember columns."
+      "name": "Frost Map",
+      "text": "Everyone sees this round’s frost columns."
     },
     "rapidrefit": {
       "name": "Quick Couplings",
@@ -175,23 +175,23 @@ export const THEME = {
   },
   "terrain": {
     "flats": {
-      "name": "Straight Run",
+      "name": "Open Ice",
       "text": "Fast track: miles ×1.25."
     },
     "hardpan": {
-      "name": "Prairie",
+      "name": "Tundra",
       "text": "Plain track."
     },
     "orefield": {
-      "name": "Mining Spur",
+      "name": "Mine Spur",
       "text": "Every Ore Hopper scoops +2 ore."
     },
     "vents": {
-      "name": "Hot Springs",
+      "name": "Geothermal Vents",
       "text": "The Boiler gets 6 free steam."
     },
     "scrapyard": {
-      "name": "Junk Siding",
+      "name": "Dead Station",
       "text": "Every car picks up 2 plates."
     }
   },
@@ -199,7 +199,7 @@ export const THEME = {
     "power": "Boiler +5 steam",
     "fab": "Workshop +4 ore, +2 smelting",
     "loco": "Engine +20% miles",
-    "shield": "Armour +2 douses (any column)"
+    "shield": "Armour +2 shields (any column)"
   },
   "modes": {
     "first": {
@@ -209,11 +209,11 @@ export const THEME = {
       "name": "Standard"
     },
     "gale": {
-      "name": "Inferno"
+      "name": "Whiteout"
     }
   },
   "lose": {
-    "caught": "The wildfire caught the train",
+    "caught": "The Freeze caught the train",
     "timeout": "Out of time before the Last Station"
   },
   "win": "The train made the Last Station"

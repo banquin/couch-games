@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="css/host.css">
 <script src="../shared/vendor/peerjs.min.js"></script>
 <script src="../shared/vendor/qrcode.js"></script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 </head>
 <body class="host wc">
   <!-- LOBBY -->
@@ -62,6 +63,10 @@
       <div class="dept-panel" id="p-research"></div>
     </div>
     <div class="center" id="center"></div>
+    <!-- 3D mode: the train canvas, with HTML labels and the race bar on top -->
+    <div id="stage" class="stage"></div>
+    <div id="carLabels" class="car-labels"></div>
+    <div id="raceBar" class="race-bar hud"></div>
     <footer class="foot">
       <div id="footLine" class="foot-line"></div>
       <span id="footCode" class="muted"></span>

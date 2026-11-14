@@ -1,6 +1,6 @@
 // End-to-end smoke test: the TV, two phones (Engine + Boiler cars), bots for the rest, several rounds.
 // Needs the server running (node server.js).  Run: node walking-city/test/smoke.cjs [outDir]
-// Env: BASE (default http://localhost:8080), ROUNDS (default 3), SPEED (TV animation multiplier, default 0.25), ROLES (default loco,power)
+// Env: RENDER (2d|3d, default 2d), BASE (default http://localhost:8080), ROUNDS (default 3), SPEED (TV animation multiplier, default 0.25), ROLES (default loco,power)
 const { chromium } = require('playwright');
 const OUT = process.argv[2] || '.';
 const BASE = process.env.BASE || 'http://localhost:8080';
@@ -12,7 +12,7 @@ const ROLES = (process.env.ROLES || 'loco,power').split(',');
   const tv = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   tv.on('console', m => { if (m.type() === 'error') errors.push('TV: ' + m.text()); });
   tv.on('pageerror', e => errors.push('TV pageerror: ' + e.message));
-  await tv.goto(BASE + '/walking-city/host.html?fresh=1&speed=' + SPEED + (process.env.QUERY || ''));
+  await tv.goto(BASE + '/walking-city/host.html?fresh=1&render=' + (process.env.RENDER || '2d') + '&speed=' + SPEED + (process.env.QUERY || ''));
   await tv.waitForFunction(() => /^[A-Z]{4}$/.test(document.querySelector('#roomCode').textContent));
   const code = await tv.textContent('#roomCode');
   console.log('room', code);
